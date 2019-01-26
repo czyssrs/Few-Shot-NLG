@@ -1,5 +1,7 @@
 import re, time, os
 
+root_path = "/scratch/home/zhiyu/wiki2bio/"
+
 def split_infobox():
     """
     extract box content, field type and position information from infoboxes from original_data
@@ -7,16 +9,16 @@ def split_infobox():
     *.box.lab is the field type for each token
     *.box.pos is the position counted from the begining of a field
     """
-    bwfile = ["processed_data/train/train.box.val", 
-              "processed_data/valid/valid.box.val", 
-              "processed_data/test/test.box.val"]
-    bffile = ["processed_data/train/train.box.lab", 
-              "processed_data/valid/valid.box.lab", 
-              "processed_data/test/test.box.lab"]
-    bpfile = ["processed_data/train/train.box.pos", 
-              "processed_data/valid/valid.box.pos", 
-              "processed_data/test/test.box.pos"]
-    boxes = ["original_data/train.box", "original_data/valid.box", "original_data/test.box"]
+    bwfile = [root_path + "processed_data/train/train.box.val", 
+              root_path + "processed_data/valid/valid.box.val", 
+              root_path + "processed_data/test/test.box.val"]
+    bffile = [root_path + "processed_data/train/train.box.lab", 
+              root_path + "processed_data/valid/valid.box.lab", 
+              root_path + "processed_data/test/test.box.lab"]
+    bpfile = [root_path + "processed_data/train/train.box.pos", 
+              root_path + "processed_data/valid/valid.box.pos", 
+              root_path + "processed_data/test/test.box.pos"]
+    boxes = [root_path + "original_data/train.box", root_path + "original_data/valid.box", root_path + "original_data/test.box"]
     
     mixb_word, mixb_label, mixb_pos = [], [], []
     for fboxes in boxes:
@@ -69,8 +71,8 @@ def split_infobox():
 
 def reverse_pos():
     # get the position counted from the end of a field
-    bpfile = ["processed_data/train/train.box.pos", "processed_data/valid/valid.box.pos", "processed_data/test/test.box.pos"]
-    bwfile = ["processed_data/train/train.box.rpos", "processed_data/valid/valid.box.rpos", "processed_data/test/test.box.rpos"]
+    bpfile = [root_path + "processed_data/train/train.box.pos", root_path + "processed_data/valid/valid.box.pos", root_path + "processed_data/test/test.box.pos"]
+    bwfile = [root_path + "processed_data/train/train.box.rpos", root_path + "processed_data/valid/valid.box.rpos", root_path + "processed_data/test/test.box.rpos"]
     for k, pos in enumerate(bpfile):
         box = open(pos, "r").read().strip().split('\n')
         reverse_pos = []
@@ -90,18 +92,18 @@ def reverse_pos():
                 bw.write(" ".join(item) + '\n')
 
 def check_generated_box():
-    ftrain = ["processed_data/train/train.box.val",
-              "processed_data/train/train.box.lab",
-              "processed_data/train/train.box.pos",
-              "processed_data/train/train.box.rpos"]
-    ftest  = ["processed_data/test/test.box.val", 
-              "processed_data/test/test.box.lab",
-              "processed_data/test/test.box.pos",
-              "processed_data/test/test.box.rpos"]
-    fvalid = ["processed_data/valid/valid.box.val", 
-              "processed_data/valid/valid.box.lab", 
-              "processed_data/valid/valid.box.pos",
-              "processed_data/valid/valid.box.rpos"]
+    ftrain = [root_path + "processed_data/train/train.box.val",
+              root_path + "processed_data/train/train.box.lab",
+              root_path + "processed_data/train/train.box.pos",
+              root_path + "processed_data/train/train.box.rpos"]
+    ftest  = [root_path + "processed_data/test/test.box.val", 
+              root_path + "processed_data/test/test.box.lab",
+              root_path + "processed_data/test/test.box.pos",
+              root_path + "processed_data/test/test.box.rpos"]
+    fvalid = [root_path + "processed_data/valid/valid.box.val", 
+              root_path + "processed_data/valid/valid.box.lab", 
+              root_path + "processed_data/valid/valid.box.pos",
+              root_path + "processed_data/valid/valid.box.rpos"]
     for case in [ftrain, ftest, fvalid]:
         vals = open(case[0], 'r').read().strip().split('\n')
         labs = open(case[1], 'r').read().strip().split('\n')
@@ -128,8 +130,8 @@ def check_generated_box():
 
 
 def split_summary_for_rouge():
-    bpfile = ["original_data/test.summary", "original_data/valid.summary"]
-    bwfile = ["processed_data/test/test_split_for_rouge/", "processed_data/valid/valid_split_for_rouge/"]
+    bpfile = [root_path + "original_data/test.summary", root_path + "original_data/valid.summary"]
+    bwfile = [root_path + "processed_data/test/test_split_for_rouge/", root_path + "processed_data/valid/valid_split_for_rouge/"]
     for i, fi in enumerate(bpfile):
         fread = open(fi, 'r')
         k = 0
@@ -150,7 +152,7 @@ class Vocab(object):
         vocab['END_TOKEN'] = 2
         vocab['UNK_TOKEN'] = 3
         cnt = 4
-        with open("original_data/word_vocab.txt", "r") as v:
+        with open(root_path + "original_data/word_vocab.txt", "r") as v:
             for line in v:
                 word = line.strip().split()[0]
                 vocab[word] = cnt
@@ -164,7 +166,7 @@ class Vocab(object):
         key_map['END_TOKEN'] = 2
         key_map['UNK_TOKEN'] = 3
         cnt = 4
-        with open("original_data/field_vocab.txt", "r") as v:
+        with open(root_path + "original_data/field_vocab.txt", "r") as v:
             for line in v:
                 key = line.strip().split()[0]
                 key_map[key] = cnt
@@ -189,24 +191,24 @@ class Vocab(object):
         return ans
 
 def table2id():
-    fvals = ['processed_data/train/train.box.val',
-             'processed_data/test/test.box.val',
-             'processed_data/valid/valid.box.val']
-    flabs = ['processed_data/train/train.box.lab',
-             'processed_data/test/test.box.lab',
-             'processed_data/valid/valid.box.lab']
-    fsums = ['original_data/train.summary',
-             'original_data/test.summary',
-             'original_data/valid.summary']
-    fvals2id = ['processed_data/train/train.box.val.id',
-                'processed_data/test/test.box.val.id',
-                'processed_data/valid/valid.box.val.id']
-    flabs2id = ['processed_data/train/train.box.lab.id',
-                'processed_data/test/test.box.lab.id',
-                'processed_data/valid/valid.box.lab.id']
-    fsums2id = ['processed_data/train/train.summary.id',
-                'processed_data/test/test.summary.id',
-                'processed_data/valid/valid.summary.id']
+    fvals = [root_path + 'processed_data/train/train.box.val',
+             root_path + 'processed_data/test/test.box.val',
+             root_path + 'processed_data/valid/valid.box.val']
+    flabs = [root_path + 'processed_data/train/train.box.lab',
+             root_path + 'processed_data/test/test.box.lab',
+             root_path + 'processed_data/valid/valid.box.lab']
+    fsums = [root_path + 'original_data/train.summary',
+             root_path + 'original_data/test.summary',
+             root_path + 'original_data/valid.summary']
+    fvals2id = [root_path + 'processed_data/train/train.box.val.id',
+                root_path + 'processed_data/test/test.box.val.id',
+                root_path + 'processed_data/valid/valid.box.val.id']
+    flabs2id = [root_path + 'processed_data/train/train.box.lab.id',
+                root_path + 'processed_data/test/test.box.lab.id',
+                root_path + 'processed_data/valid/valid.box.lab.id']
+    fsums2id = [root_path + 'processed_data/train/train.summary.id',
+                root_path + 'processed_data/test/test.summary.id',
+                root_path + 'processed_data/valid/valid.summary.id']
     vocab = Vocab()
     for k, ff in enumerate(fvals):
         fi = open(ff, 'r')
@@ -262,15 +264,15 @@ def preprocess():
 
 
 def make_dirs():
-    os.mkdir("results/")
-    os.mkdir("results/res/")
-    os.mkdir("results/evaluation/")
-    os.mkdir("processed_data/")
-    os.mkdir("processed_data/train/")
-    os.mkdir("processed_data/test/")
-    os.mkdir("processed_data/valid/")
-    os.mkdir("processed_data/test/test_split_for_rouge/")
-    os.mkdir("processed_data/valid/valid_split_for_rouge/")
+    os.mkdir(root_path + "results/")
+    os.mkdir(root_path + "results/res/")
+    os.mkdir(root_path + "results/evaluation/")
+    os.mkdir(root_path + "processed_data/")
+    os.mkdir(root_path + "processed_data/train/")
+    os.mkdir(root_path + "processed_data/test/")
+    os.mkdir(root_path + "processed_data/valid/")
+    os.mkdir(root_path + "processed_data/test/test_split_for_rouge/")
+    os.mkdir(root_path + "processed_data/valid/valid_split_for_rouge/")
 
 if __name__ == '__main__':
     make_dirs()

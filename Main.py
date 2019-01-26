@@ -32,7 +32,7 @@ tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
-tf.app.flags.DEFINE_string("dir",'processed_data','data set directory')
+tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/processed_data','data set directory')
 tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
 
 
@@ -51,14 +51,20 @@ last_best = 0.0
 
 model_dir = sys.argv[1]
 
-gold_path_test = 'processed_data/test/test_split_for_rouge/gold_summary_'
-gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
+### path for calculate ROUGE
+# gold_path_test = 'processed_data/test/test_split_for_rouge/gold_summary_'
+# gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
+
+###
+root_path = "/scratch/home/zhiyu/wiki2bio/"
+gold_path_valid = root_path + 'original_data/valid.summary'
+gold_path_test = root_path + 'original_data/test.summary'
 
 # test phase
 if FLAGS.load != "0":
-    save_dir = 'results/res/' + FLAGS.load + '/'
-    save_file_dir = save_dir + 'files/'
-    pred_dir = 'results/evaluation/' + FLAGS.load + '/'
+    save_dir = root_path + 'results/res/' + model_dir + '/loads/' + FLAGS.load + '/'
+    save_file_dir = root_path + 'results/res/' + model_dir + '/' + 'files/'
+    pred_dir = root_path + 'results/evaluation/' + model_dir + '/' + FLAGS.load + '/'
     if not os.path.exists(pred_dir):
         os.mkdir(pred_dir)
     if not os.path.exists(save_file_dir):
@@ -67,13 +73,12 @@ if FLAGS.load != "0":
     pred_beam_path = pred_dir + 'beam_summary_'
 # train phase
 else:
-    prefix = str(int(time.time() * 1000))
-    os.mkdir('results/res/' + model_dir)
-    os.mkdir('results/evaluation/' + model_dir)
-    save_dir = 'results/res/' + model_dir + '/' + prefix + '/'
+    # prefix = str(int(time.time() * 1000))
+    os.mkdir(root_path + 'results/res/' + model_dir)
+    os.mkdir(root_path + 'results/evaluation/' + model_dir)
+    save_dir = root_path + 'results/res/' + model_dir + '/'
     save_file_dir = save_dir + 'files/'
-    pred_dir = 'results/evaluation/' + model_dir + '/' + prefix + '/'
-    os.mkdir(save_dir)
+    pred_dir = root_path + 'results/evaluation/' + model_dir + '/'
     if not os.path.exists(pred_dir):
         os.mkdir(pred_dir)
     if not os.path.exists(save_file_dir):
@@ -101,8 +106,6 @@ def train(sess, dataloader, model):
             record_loss += this_loss
             k += 1
             record_k += 1
-            ksave_dir = save_model(model, save_dir, k // FLAGS.report)
-            write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
             progress_bar(k%FLAGS.report, FLAGS.report)
             ### czy
             if (record_k % FLAGS.report_loss == 0):
@@ -111,6 +114,7 @@ def train(sess, dataloader, model):
                 record_loss = 0.0
 
             if (k % FLAGS.report == 0):
+                print "Round: ", k / FLAGS.report
                 cost_time = time.time() - start_time
                 write_log("%d : loss = %.3f, time = %.3f " % (k // FLAGS.report, loss, cost_time))
                 loss, start_time = 0.0, time.time()
@@ -136,12 +140,12 @@ def save_model(model, save_dir, cnt):
 def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     if mode == 'valid':
         # texts_path = "original_data/valid.summary"
-        texts_path = "processed_data/valid/valid.box.val"
+        texts_path = root_path + "processed_data/valid/valid.box.val"
         gold_path = gold_path_valid
         evalset = dataloader.dev_set
     else:
         # texts_path = "original_data/test.summary"
-        texts_path = "processed_data/test/test.box.val"
+        texts_path = root_path + "processed_data/test/test.box.val"
         gold_path = gold_path_test
         evalset = dataloader.test_set
     
@@ -187,6 +191,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
 
 
     ### new bleu
+    print ksave_dir + mode + "_summary_unk.txt"
     bleu_unk = bleu_score(gold_path, ksave_dir + mode + "_summary_unk.txt")
     nocopy_result = "without copy BLEU: %.4f\n"%bleu_unk
     bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary_copy.clean.txt")

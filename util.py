@@ -1,4 +1,5 @@
-import time, os, sys, shutil
+import time, os, sys, shutil, io, subprocess, re
+import tensorflow as tf
 
 # Progress bar
 
@@ -9,6 +10,27 @@ print os.popen('stty size', 'r').read()
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 
+
+#### by hongmin
+def bleu_score(labels_file, predictions_path):
+    bleu_script = '/scratch/home/zhiyu/wiki2bio/wikitobio/multi-bleu.perl'
+    try:
+      with io.open(predictions_path, encoding="utf-8", mode="r") as predictions_file:
+        bleu_out = subprocess.check_output(
+            [bleu_script, labels_file],
+            stdin=predictions_file,
+            stderr=subprocess.STDOUT)
+        bleu_out = bleu_out.decode("utf-8")
+        bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
+        print bleu_score
+        return float(bleu_score)
+
+    except subprocess.CalledProcessError as error:
+      if error.output is not None:
+        msg = error.output.strip()
+        tf.logging.warning(
+            "{} script returned non-zero exit code: {}".format(bleu_script, msg))
+      return None
 
 def progress_bar(current, total, msg=None):
     global last_time, begin_time

@@ -140,7 +140,7 @@ class SeqUnit(object):
         ### original loss with logits
         #losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs, labels=self.decoder_output)
 
-        losses = -tf.reduce_sum(self.decoder_output_one_hot * tf.log(de_outputs), 2)
+        losses = -tf.reduce_sum(self.decoder_output_one_hot * tf.log(de_outputs + 1e-9), 2)
 
 
         mask = tf.sign(tf.to_float(self.decoder_output))
@@ -240,15 +240,14 @@ class SeqUnit(object):
             ### pointer generator
             #emit_ta = emit_ta.write(t, o_t)
 
-            ### o_weight = len * batch * 1, already normalized. p_gen = batch * 1
+            ### o_weight = batch * len, already normalized. p_gen = batch * 1
             out_dist = p_gen * tf.nn.softmax(o_t) # batch * self.target_vocab
-            att_dist = tf.squeeze(o_weight) # len * batch
-            att_dist = (1 - p_gen) * tf.transpose(att_dist, [1,0]) # batch * len
+            att_dist = (1 - p_gen) * o_weight # batch * len
 
             batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
-            batch_nums = tf.tile(batch_nums, [1, encoder_len]) # shape (batch_size, attn_len)
-            indices = tf.stack( (batch_nums, self.encoder_input), axis=2) # shape (batch_size, enc_t, 2)
+            batch_nums = tf.tile(batch_nums, [1, encoder_len]) # shape (batch_size, enc_len)
+            indices = tf.stack((batch_nums, self.encoder_input), axis=2) # shape (batch_size, enc_len, 2)
             shape = [batch_size, self.target_vocab]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape)
 
@@ -282,11 +281,29 @@ class SeqUnit(object):
 
         def loop_fn(t, x_t, s_t, emit_ta, att_ta, finished):
             o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
-            o_t, w_t = self.att_layer(o_t)
+            o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t)
             o_t = self.dec_out(o_t, finished)
-            emit_ta = emit_ta.write(t, o_t)
-            att_ta = att_ta.write(t, w_t)
-            next_token = tf.arg_max(o_t, 1)
+
+            ### pointer generator
+            #emit_ta = emit_ta.write(t, o_t)
+
+            ### o_weight = batch * len, already normalized. p_gen = batch * 1
+            out_dist = p_gen * tf.nn.softmax(o_t) # batch * self.target_vocab
+            att_dist = (1 - p_gen) * o_weight # batch * len
+
+            batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
+            batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
+            batch_nums = tf.tile(batch_nums, [1, encoder_len]) # shape (batch_size, enc_len)
+            indices = tf.stack((batch_nums, self.encoder_input), axis=2) # shape (batch_size, enc_len, 2)
+            shape = [batch_size, self.target_vocab]
+            attn_dists_projected = tf.scatter_nd(indices, att_dist, shape) # batch * target_vocab
+
+            final_dists = out_dist + attn_dists_projected
+
+
+            emit_ta = emit_ta.write(t, final_dists)
+            att_ta = att_ta.write(t, tf.transpose(o_weight, [1,0]))
+            next_token = tf.arg_max(final_dists, 1)
             x_nt = tf.nn.embedding_lookup(self.embedding, next_token)
             finished = tf.logical_or(finished, tf.equal(next_token, self.stop_token))
             finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
