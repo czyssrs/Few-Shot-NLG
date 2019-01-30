@@ -30,6 +30,9 @@ tf.app.flags.DEFINE_integer("target_vocab", 20003,'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 5000,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
+tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
+tf.app.flags.DEFINE_float("coverage_penalty", 0.1,'coverage loss penalty')
+
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
 tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/processed_data','data set directory')
@@ -56,7 +59,8 @@ model_dir = sys.argv[1]
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
 ###
-root_path = "/scratch/home/zhiyu/wiki2bio/"
+# root_path = "/scratch/home/zhiyu/wiki2bio/"
+root_path = "../"
 gold_path_valid = root_path + 'original_data/valid.summary'
 gold_path_test = root_path + 'original_data/test.summary'
 
@@ -99,19 +103,22 @@ def train(sess, dataloader, model):
     record_k = 0
     loss, start_time = 0.0, time.time()
     record_loss = 0.0
+    record_cov_loss = 0.0
     for _ in range(FLAGS.epoch):
         for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True):
-            this_loss = model(x, sess)
+            this_loss, this_covloss = model(x, sess)
             loss += this_loss
             record_loss += this_loss
+            record_cov_loss += this_covloss
             k += 1
             record_k += 1
             progress_bar(k%FLAGS.report, FLAGS.report)
             ### czy
             if (record_k % FLAGS.report_loss == 0):
-                write_log("%d : loss = %.3f " % (k, record_loss / record_k))
+                write_log("%d : loss = %.3f, covloss = %.3f " % (k, record_loss / record_k, record_cov_loss / record_k))
                 record_k = 0
                 record_loss = 0.0
+                record_cov_loss = 0.0
 
             if (k % FLAGS.report == 0):
                 print "Round: ", k / FLAGS.report
@@ -184,18 +191,18 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
                 pred_mask.append([str(x) for x in mask_sum])
                 k += 1
                 idx += 1
+
     write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
     write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
-
     write_word(pred_list, ksave_dir, mode + "_summary_copy.clean.txt")
 
 
     ### new bleu
-    print ksave_dir + mode + "_summary_unk.txt"
+    # print ksave_dir + mode + "_summary_unk.txt"
     bleu_unk = bleu_score(gold_path, ksave_dir + mode + "_summary_unk.txt")
-    nocopy_result = "without copy BLEU: %.4f\n"%bleu_unk
+    nocopy_result = "without copy BLEU: %.4f\n" % bleu_unk
     bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary_copy.clean.txt")
-    copy_result = "with copy BLEU: %.4f\n" %bleu_copy
+    copy_result = "with copy BLEU: %.4f\n" % bleu_copy
 
 
     # ### old bleu. too slow
@@ -257,7 +264,8 @@ def main():
                         target_vocab=FLAGS.target_vocab, scope_name="seq2seq", name="seq2seq",
                         field_concat=FLAGS.field, position_concat=FLAGS.position,
                         fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention, decoder_add_pos=FLAGS.decoder_pos,
-                        encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate)
+                        encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
+                        use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty)
         sess.run(tf.global_variables_initializer())
         # copy_file(save_file_dir)
         if FLAGS.load != '0':

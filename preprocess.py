@@ -1,6 +1,7 @@
 import re, time, os
 
-root_path = "/scratch/home/zhiyu/wiki2bio/"
+# root_path = "/scratch/home/zhiyu/wiki2bio/"
+root_path = "../"
 
 def split_infobox():
     """

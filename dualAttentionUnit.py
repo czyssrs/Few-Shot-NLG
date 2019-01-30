@@ -31,6 +31,10 @@ class dualAttentionWrapper(object):
             self.Wr = tf.get_variable('Wr', [input_size, hidden_size])
             self.br = tf.get_variable('br', [hidden_size])
 
+            ### coverage
+            self.Wc = tf.get_variable('Wc', [1])
+            self.bc = tf.get_variable('bc', [1])
+
             ### add pointer params
             ### p_gen = sigmod(wh * ht + ws * st + wx * xt + bptr)
             self.wh_ptr = tf.get_variable('wh_ptr', [self.hidden_size, 1])
@@ -43,7 +47,8 @@ class dualAttentionWrapper(object):
                             'Wf': self.Wf, 'Wr': self.Wr, 
                             'bf': self.bf, 'br': self.br,
                             'wh_ptr': self.wh_ptr, 'ws_ptr': self.ws_ptr,
-                            'wx_ptr': self.wx_ptr, 'b_ptr': self.b_ptr})
+                            'wx_ptr': self.wx_ptr, 'b_ptr': self.b_ptr,
+                            'Wc': self.Wc, 'bc': self.bc})
 
         hs2d = tf.reshape(self.hs, [-1, input_size])
         phi_hs2d = tf.tanh(tf.nn.xw_plus_b(hs2d, self.Wh, self.bh))
@@ -52,15 +57,25 @@ class dualAttentionWrapper(object):
         phi_fds2d = tf.tanh(tf.nn.xw_plus_b(fds2d, self.Wf, self.bf))
         self.phi_fds = tf.reshape(phi_fds2d, tf.shape(self.hs))
 
-    def __call__(self, x, in_t, s_t, coverage = None, finished = None):
+    def __call__(self, x, in_t, s_t, coverage_att_sum, finished = None):
+
+        ### add coverage: coverage_att_sum # batch * enc_len
+        ### how to incorporate coverage penalty? for each or for all?
         gamma_h = tf.tanh(tf.nn.xw_plus_b(x, self.Ws, self.bs))  # batch * hidden_size
         alpha_h = tf.tanh(tf.nn.xw_plus_b(x, self.Wr, self.br))
         fd_weights = tf.reduce_sum(self.phi_fds * alpha_h, reduction_indices=2, keep_dims=True) # len * batch * 1
         fd_weights = tf.exp(fd_weights - tf.reduce_max(fd_weights, reduction_indices=0, keep_dims=True))
         fd_weights = tf.divide(fd_weights, (1e-6 + tf.reduce_sum(fd_weights, reduction_indices=0, keep_dims=True))) # len * batch * 1
-        
-        
+
+
         weights = tf.reduce_sum(self.phi_hs * gamma_h, reduction_indices=2, keep_dims=True)  # input_len * batch * 1
+
+        ### coverage
+        # # coverage_penalty = tf.tanh(tf.nn.xw_plus_b(coverage_att_sum, self.Wc, self.bc))
+        # coverage_penalty = tf.tanh(coverage_att_sum * self.Wc + self.bc)
+        # coverage_penalty = tf.expand_dims(tf.transpose(coverage_penalty, [1,0]), -1) # enc_len * batch * 1
+        # weights = weights + coverage_penalty
+
         weights = tf.exp(weights - tf.reduce_max(weights, reduction_indices=0, keep_dims=True))
         weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, reduction_indices=0, keep_dims=True)))
         weights = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, reduction_indices=0, keep_dims=True))) # len * batch * 1
@@ -68,7 +83,7 @@ class dualAttentionWrapper(object):
         context = tf.reduce_sum(self.hs * weights, reduction_indices=0)  # batch * input_size
         out = tf.tanh(tf.nn.xw_plus_b(tf.concat([context, x], -1), self.Wo, self.bo))
 
-        #### poniter generator
+        #### pointer generator
         ### p_gen = sigmod(wh * ht + ws * st + wx * xt + bptr)
         h_prev, c_prev = s_t
         s_t = tf.concat([h_prev, c_prev], 1)

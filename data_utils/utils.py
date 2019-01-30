@@ -3,12 +3,17 @@ import os
 from nltk.translate.bleu_score import sentence_bleu
 
 
-train_table = "../original_data/train.box"
-test_table = "../original_data/test.box"
-summary_ours_in = "../result_hongmin/test_summary_copy.clean.txt"
-summary_with_unk = "../result_hongmin/test_summary_copy.txt"
-summary_gold_in = "../original_data/test.summary"
-file_out = "../data_misc/test_compare_error_0.1_0.2.txt"
+project_dir = "/scratch/home/zhiyu/wiki2bio/"
+model_dir = project_dir + "results/res/pointer-gen/loads/33/"
+
+train_table = project_dir + "original_data/train.box"
+test_table = project_dir + "original_data/test.box"
+summary_gold_in = project_dir + "original_data/test.summary"
+
+summary_ours_in = model_dir + "test_summary_copy.clean.txt"
+summary_with_unk = model_dir + "test_summary_copy.txt"
+
+file_out = project_dir + "data_misc/test_compare_error_0.5_pointer.txt"
 
 def gen_compare(table_in, summary_ours_in, summary_with_unk, summary_gold_in, file_out):
 	'''
@@ -41,7 +46,9 @@ def gen_compare(table_in, summary_ours_in, summary_with_unk, summary_gold_in, fi
 		i += 1
 
 		#if this_bleu < 0.1:
-		if this_bleu > 0.1 and this_bleu < 0.2:
+		#if this_bleu > 0.1 and this_bleu < 0.2:
+		#if this_bleu > 0.2 and this_bleu < 0.3:
+		if this_bleu > 0.5:
 
 			avg_len_wrong += len(this_box.strip().split("\t"))
 			num_write += 1
