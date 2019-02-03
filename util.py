@@ -1,5 +1,6 @@
 import time, os, sys, shutil, io, subprocess, re
 import tensorflow as tf
+import numpy as np
 
 # Progress bar
 
@@ -31,6 +32,117 @@ def bleu_score(labels_file, predictions_path):
         tf.logging.warning(
             "{} script returned non-zero exit code: {}".format(bleu_script, msg))
       return None
+
+def read_word2vec_zip(word2vec_file):
+    wordvec_map = {}
+    num_words = 0
+    dimension = 0
+    zfile = zipfile.ZipFile(word2vec_file)
+    for finfo in zfile.infolist():
+        ifile = zfile.open(finfo)
+        for line in ifile:
+            line = line.strip()
+            #print line
+            entries = line.split(' ')
+            if len(entries) == 2:
+                continue
+            word = entries[0].strip()
+            vec = map(float, entries[1:])
+
+            if word in wordvec_map:
+                print ("Invalid word in embedding. Does not matter.")
+                continue
+            assert dimension == 0 or dimension == len(vec)
+
+            wordvec_map[word] = np.array(vec)
+            num_words += 1
+            dimension = len(vec)
+
+    return wordvec_map, num_words, dimension
+
+def read_word2vec(word2vec_file):
+    wordvec_map = {}
+    num_words = 0
+    dimension = 0
+    with open(word2vec_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            #print line
+            entries = line.split(' ')
+            if len(entries) == 2:
+                continue
+            word = entries[0].strip()
+            vec = map(float, entries[1:])
+
+            if word in wordvec_map:
+                print ("Invalid word in embedding. Does not matter.")
+                continue
+            # assert word not in wordvec_map
+            assert dimension == 0 or dimension == len(vec)
+
+            wordvec_map[word] = np.array(vec)
+            num_words += 1
+            dimension = len(vec)
+
+    return wordvec_map, num_words, dimension
+
+def load_vocab(vocab_file):
+    vocab = {}
+
+    vocab['<_PAD>'] = 0
+    vocab['<_START_TOKEN>'] = 1
+    vocab['<_END_TOKEN>'] = 2
+    vocab['<_UNK_TOKEN>'] = 3
+
+    cnt = 4
+    with open(vocab_file, "r") as v:
+        for line in v:
+            if len(line.strip().split()) > 1:
+                word = line.strip().split()[0]
+                ori_id = int(line.strip().split()[1])
+                if word not in vocab:
+                    vocab[word] = (cnt + ori_id)
+
+    return vocab
+
+def create_init_embedding(vocab_file, word2vec_file, emblen):
+    '''
+    create initial embedding for text relation words.
+    words not in word2vec file initialized to random.
+
+    key_map['PAD'] = 0
+    key_map['START_TOKEN'] = 1
+    key_map['END_TOKEN'] = 2
+    key_map['UNK_TOKEN'] = 3
+    '''
+
+    vocab = load_vocab(vocab_file)
+    print "vocab len: ", len(vocab)
+
+    init_embedding = np.random.uniform(-np.sqrt(3), np.sqrt(3), size = (len(vocab), emblen))
+
+    if word2vec_file.endswith('.gz'):
+        word2vec_map = KeyedVectors.load_word2vec_format(word2vec_file, binary=True)
+    elif word2vec_file.endswith('.zip'):
+        word2vec_map, num_words, dimension = read_word2vec_zip(word2vec_file)
+    else:
+        word2vec_map, num_words, dimension = read_word2vec(word2vec_file)
+
+    num_covered = 0
+
+    for word in vocab:
+        if word in word2vec_map:
+            vec = word2vec_map[word]
+            if len(vec) != emblen:
+                raise ValueError("word2vec dimension doesn't match.")
+            init_embedding[vocab[word], :] = vec
+            num_covered += 1
+
+    ## embedding for pad
+    # init_embedding[0][:] = np.zeros(emblen)
+
+    print ("word2vec covered: %d" % num_covered)
+    return init_embedding
 
 def progress_bar(current, total, msg=None):
     global last_time, begin_time

@@ -18,15 +18,15 @@ from util import *
 
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
-tf.app.flags.DEFINE_integer("emb_size", 400, "Size of embedding.")
-tf.app.flags.DEFINE_integer("field_size", 50, "Size of embedding.")
+tf.app.flags.DEFINE_integer("emb_size", 300, "Size of embedding.")
+tf.app.flags.DEFINE_integer("field_size", 300, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
 tf.app.flags.DEFINE_integer("epoch", 50, "Number of training epoch.")
-tf.app.flags.DEFINE_integer("source_vocab", 20003,'vocabulary size')
+tf.app.flags.DEFINE_integer("source_vocab", 30701,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 1480,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
-tf.app.flags.DEFINE_integer("target_vocab", 20003,'vocabulary size')
+tf.app.flags.DEFINE_integer("target_vocab", 30701,'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 5000,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
@@ -35,7 +35,7 @@ tf.app.flags.DEFINE_float("coverage_penalty", 0.1,'coverage loss penalty')
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
-tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/processed_data','data set directory')
+tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/emb_baseline/processed_data','data set directory')
 tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
 
 
@@ -60,11 +60,18 @@ model_dir = sys.argv[1]
 
 ###
 # root_path = "/scratch/home/zhiyu/wiki2bio/"
-root_path = "../"
+# root_path = "../"
+root_path = "../emb_baseline/"
 gold_path_valid = root_path + 'original_data/valid.summary'
 gold_path_test = root_path + 'original_data/test.summary'
 
+field_vocab_file = root_path + "pc_books_songs_field_vocab.txt"
+vocab_file = root_path + "pc_books_songs_word_vocab.txt"
+
+word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
+
 # test phase
+#### need to change!!!
 if FLAGS.load != "0":
     save_dir = root_path + 'results/res/' + model_dir + '/loads/' + FLAGS.load + '/'
     save_file_dir = root_path + 'results/res/' + model_dir + '/' + 'files/'
@@ -113,6 +120,9 @@ def train(sess, dataloader, model):
             k += 1
             record_k += 1
             progress_bar(k%FLAGS.report, FLAGS.report)
+
+            # ksave_dir = save_model(model, save_dir, k // FLAGS.report)
+            # write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
             ### czy
             if (record_k % FLAGS.report_loss == 0):
                 write_log("%d : loss = %.3f, covloss = %.3f " % (k, record_loss / record_k, record_cov_loss / record_k))
@@ -127,6 +137,7 @@ def train(sess, dataloader, model):
                 loss, start_time = 0.0, time.time()
                 if k // FLAGS.report >= 1: 
                     ksave_dir = save_model(model, save_dir, k // FLAGS.report)
+                    write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
                     write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
                     
 
@@ -257,7 +268,12 @@ def main():
     config.gpu_options.allow_growth = True
     with tf.Session(config=config) as sess:
         copy_file(save_file_dir)
+
+        init_word_emb = create_init_embedding(vocab_file, word2vec_file, 300)
+        assert len(init_word_emb) == FLAGS.source_vocab
+
         dataloader = DataLoader(FLAGS.dir, FLAGS.limits)
+
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size, emb_size=FLAGS.emb_size,
                         field_size=FLAGS.field_size, pos_size=FLAGS.pos_size, field_vocab=FLAGS.field_vocab,
                         source_vocab=FLAGS.source_vocab, position_vocab=FLAGS.position_vocab,
@@ -265,7 +281,9 @@ def main():
                         field_concat=FLAGS.field, position_concat=FLAGS.position,
                         fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention, decoder_add_pos=FLAGS.decoder_pos,
                         encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
-                        use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty)
+                        use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty,
+                        init_word_embedding = init_word_emb)
+
         sess.run(tf.global_variables_initializer())
         # copy_file(save_file_dir)
         if FLAGS.load != '0':

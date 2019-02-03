@@ -21,6 +21,7 @@ class DataLoader(object):
                               data_dir + '/valid/valid.box.rpos']
         self.limits = limits
         self.man_text_len = 100
+        self.man_summary_len = 150
         start_time = time.time()
 
         print('Reading datasets ...')
@@ -29,6 +30,17 @@ class DataLoader(object):
         # self.small_test_set = self.load_data(self.small_test_data_path)
         self.dev_set = self.load_data(self.dev_data_path)
         print ('Reading datasets comsumes %.3f seconds' % (time.time() - start_time))
+
+        ### load fieldid2word list len 3
+        self.fieldid2word = {}
+        with open(data_dir + "/field2word.txt") as f:
+            for line in f:
+                fieldid = int(line.strip().split("\t")[0])
+                word_list = line.strip().split("\t")[1].split(" ")
+                wordid_list = [int(tmp) for tmp in word_list]
+                assert len(wordid_list) == 3
+
+                self.fieldid2word[fieldid] = wordid_list
 
     def load_data(self, path):
         summary_path, text_path, field_path, pos_path, rpos_path = path
@@ -85,25 +97,63 @@ class DataLoader(object):
                 assert rpos_len == pos_len
                 gold = summary + [2] + [0] * (max_summary_len - summary_len)
                 summary = summary + [0] * (max_summary_len - summary_len)
+
                 text = text + [0] * (max_text_len - text_len)
                 field = field + [0] * (max_text_len - text_len)
                 pos = pos + [0] * (max_text_len - text_len)
                 rpos = rpos + [0] * (max_text_len - text_len)
+
+                ###
+                emb_field = []
+                for each_item in field:
+                    emb_field.append(self.fieldid2word[each_item])
                 
                 if max_text_len > self.man_text_len:
                     text = text[:self.man_text_len]
                     field = field[:self.man_text_len]
+
+                    ###
+                    emb_field = emb_field[:self.man_text_len]
+
                     pos = pos[:self.man_text_len]
                     rpos = rpos[:self.man_text_len]
                     text_len = min(text_len, self.man_text_len)
+
+                ### OOM
+                if max_summary_len > self.man_summary_len:
+                    summary = summary[:self.man_summary_len - 1]
+                    if gold[self.man_summary_len - 2] == 0:
+                        gold = gold[:self.man_summary_len - 1] + [0]
+                    else:
+                        gold = gold[:self.man_summary_len - 1] + [2]
+                    if summary_len > self.man_summary_len - 1:
+                        summary_len = self.man_summary_len - 1
                 
                 batch_data['enc_in'].append(text)
                 batch_data['enc_len'].append(text_len)
-                batch_data['enc_fd'].append(field)
+
+                # batch_data['enc_fd'].append(field)
+                batch_data['enc_fd'].append(emb_field)
+
                 batch_data['enc_pos'].append(pos)
                 batch_data['enc_rpos'].append(rpos)
                 batch_data['dec_in'].append(summary)
                 batch_data['dec_len'].append(summary_len)
                 batch_data['dec_out'].append(gold)
+
+                # print np.shape(batch_data['enc_fd'])
+                # print np.shape(batch_data['enc_pos'])
   
             yield batch_data
+
+
+
+
+
+
+
+
+
+
+
+
