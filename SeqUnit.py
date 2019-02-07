@@ -17,7 +17,7 @@ class SeqUnit(object):
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
                  init_word_embedding, extend_vocab_size, fieldid2word,
-                 start_token=2, stop_token=2, max_length=150):
+                 use_glove=True, start_token=2, stop_token=2, max_length=150):
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
         source_vocab, target_vocab, field_vocab, position_vocab: vocabulary size of encoder words; decoder words; field types; position
@@ -92,15 +92,19 @@ class SeqUnit(object):
         # ======================================== embeddings ======================================== #
         #with tf.device('/cpu:0'):
         with tf.variable_scope(scope_name):
+
             # self.embedding = tf.get_variable('embedding', [self.source_vocab, self.emb_size])
 
             ### init word embedding glove
-            self.init_emb = tf.cast(self.init_word_embedding, tf.float32)
-            print ("Initialize with given embeddings")
-            self.embedding = tf.get_variable("init_embedding",
-                                             initializer=self.init_emb,
-                                             dtype=tf.float32,
-                                             trainable=False)
+            if use_glove:
+                self.init_emb = tf.cast(self.init_word_embedding, tf.float32)
+                print ("Initialize with given embeddings")
+                self.embedding = tf.get_variable("init_embedding",
+                                                 initializer=self.init_emb,
+                                                 dtype=tf.float32,
+                                                 trainable=False)
+            else:
+                self.embedding = tf.get_variable('embedding', [self.target_vocab_extend, self.emb_size])
 
             self.field_id2word = tf.constant(fieldid2word)
 
@@ -132,14 +136,16 @@ class SeqUnit(object):
 
             ### field + pos + rpos for vocab for each input
             batch_size = tf.shape(self.encoder_input)[0]
-            shape = tf.constant([batch_size, self.target_vocab_extend])
+            encoder_len = tf.shape(self.encoder_input)[1]
+            decoder_len = tf.shape(self.decoder_input)[1]
+            shape = [batch_size, self.target_vocab_extend]
 
             batch_nums = tf.range(0, limit=batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1)
-            batch_nums = tf.tile(batch_nums, [1, encoder_len])
-            indices = tf.stack((batch_nums, self.encoder_input), axis=2) # batch_size * enc_len * 2
+            batch_nums_enc = tf.tile(batch_nums, [1, encoder_len])
+            batch_nums_dec = tf.tile(batch_nums, [1, decoder_len])
 
-            attn_dists_projected = tf.scatter_nd(indices, att_dist, shape)
+            indices = tf.stack((batch_nums_enc, self.encoder_input), axis=2) # batch_size * enc_len * 2
 
             # field
             self.vocab_field_ids = tf.scatter_nd(indices, self.encoder_field, shape) # batch * target_vocab_extend
@@ -148,10 +154,13 @@ class SeqUnit(object):
             # rpos 
             self.vocab_rpos = tf.scatter_nd(indices, self.encoder_rpos, shape) # batch * target_vocab_extend
 
+            self.test = tf.Print(self.vocab_field_ids, [self.vocab_field_ids], summarize=1000)
+
             ### decoder add field + pos + rpos
-            indices_dec = tf.stack((batch_nums, self.decoder_input), axis=2) # batch_size * enc_len * 2
+            indices_dec = tf.stack((batch_nums_dec, self.decoder_input), axis=2) # batch_size * dec_len * 2
             # field
             self.decoder_field_id = tf.gather_nd(self.vocab_field_ids, indices_dec) # batch_size * dec_len
+            self.decoder_field_id = tf.zeros([batch_size, decoder_len], dtype=tf.int32)
             self.decoder_field_word = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_id)
             self.decoder_field_emb = tf.reduce_mean(
                                         tf.nn.embedding_lookup(self.embedding, self.decoder_field_word), 2) # batch_size * dec_len * field_emb_size
@@ -165,6 +174,7 @@ class SeqUnit(object):
 
 
             self.decoder_embed = tf.concat([self.decoder_embed, self.decoder_field_emb, self.decoder_pos_emb, self.decoder_rpos_emb], 2)
+
 
 
 
@@ -189,9 +199,9 @@ class SeqUnit(object):
             with tf.variable_scope(scope_name):
                 # self.att_layer = dualAttentionWrapper(self.emb_size, self.hidden_size, self.hidden_size, self.field_attention_size,
                 #                                         en_outputs, self.field_pos_embed, "attention")
-                self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.dec_input_size, self.field_attention_size,
+                self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size,
                                                         en_outputs, self.field_pos_embed, "attention")
-	            self.units.update({'attention': self.att_layer})
+                self.units.update({'attention': self.att_layer})
         else:
             print "normal attention used"
             with tf.variable_scope(scope_name):
@@ -302,6 +312,13 @@ class SeqUnit(object):
         h0 = initial_state
         f0 = tf.zeros([batch_size], dtype=tf.bool)
         x0 = tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.start_token))
+
+        ### concat with field + pos + rpos to input
+        x0_field = tf.nn.embedding_lookup(self.embedding, tf.zeros([batch_size], dtype=tf.int32))
+        x0_pos = tf.nn.embedding_lookup(self.pembedding, tf.zeros([batch_size], dtype=tf.int32))
+        x0_rpos = tf.nn.embedding_lookup(self.rembedding, tf.zeros([batch_size], dtype=tf.int32))
+        x0 = tf.concat([x0, x0_field, x0_pos, x0_rpos], 1)
+
         inputs_ta = tf.TensorArray(dtype=tf.float32, size=max_time)
         inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1,0,2]))
         emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
@@ -324,7 +341,7 @@ class SeqUnit(object):
             out_dist = p_gen * tf.nn.softmax(o_t) # batch * self.target_vocab
             att_dist = (1 - p_gen) * o_weight # batch * len
 
-            extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.int32)
+            extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.float32)
             out_dist = tf.concat(values=[out_dist, extend_zeros], axis=1)
 
             ### coverage
@@ -344,7 +361,7 @@ class SeqUnit(object):
 
 
             finished = tf.greater_equal(t, inputs_len)
-            x_nt = tf.cond(tf.reduce_all(finished), lambda: tf.zeros([batch_size, self.emb_size], dtype=tf.float32),
+            x_nt = tf.cond(tf.reduce_all(finished), lambda: tf.zeros([batch_size, self.dec_input_size], dtype=tf.float32),
                                      lambda: inputs_ta.read(t))
             return t+1, x_nt, s_nt, emit_ta, coverage_att_sum, covloss, finished
 
@@ -390,7 +407,7 @@ class SeqUnit(object):
             out_dist = p_gen * tf.nn.softmax(o_t) # batch * self.target_vocab
             att_dist = (1 - p_gen) * o_weight # batch * len
 
-            extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.int32)
+            extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.float32)
             out_dist = tf.concat(values=[out_dist, extend_zeros], axis=1)
 
             ### coverage
@@ -408,14 +425,14 @@ class SeqUnit(object):
 
             emit_ta = emit_ta.write(t, final_dists)
             att_ta = att_ta.write(t, tf.transpose(o_weight, [1,0]))
-            next_token = tf.arg_max(final_dists, 1)
+            next_token = tf.cast(tf.arg_max(final_dists, 1), tf.int32)
             x_nt_word = tf.nn.embedding_lookup(self.embedding, next_token)
 
 
 
             ### concat with field + pos + rpos
             batch_num = tf.range(0, limit=batch_size)
-            this_dec_indices = tf.stack([batch_num, x_nt_word], axis=1) # batch_size * 2
+            this_dec_indices = tf.stack([batch_num, next_token], axis=1) # batch_size * 2
             this_dec_field_id = tf.gather_nd(self.vocab_field_ids, this_dec_indices)
             this_dec_pos_id = tf.gather_nd(self.vocab_pos, this_dec_indices)
             this_dec_rpos_id = tf.gather_nd(self.vocab_rpos, this_dec_indices)
@@ -578,7 +595,7 @@ class SeqUnit(object):
         return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
     def __call__(self, x, sess):
-        loss,  _, cov_loss = sess.run([self.mean_loss, self.train_op, self.de_conv_loss],
+        loss,  _, cov_loss, _ = sess.run([self.mean_loss, self.train_op, self.de_conv_loss, self.test],
                            {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
                             self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
                             self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],

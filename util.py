@@ -106,7 +106,7 @@ def load_vocab(vocab_file):
 
     return vocab
 
-def create_init_embedding(vocab_file, word2vec_file, emblen):
+def create_init_embedding(vocab_file, extend_vocab_size, word2vec_file, emblen):
     '''
     create initial embedding for text relation words.
     words not in word2vec file initialized to random.

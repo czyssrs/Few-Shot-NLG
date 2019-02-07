@@ -11,7 +11,7 @@ from SeqUnit import *
 from DataLoader import DataLoader
 import numpy as np
 ###
-from PythonROUGE import PythonROUGE
+# from PythonROUGE import PythonROUGE
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from preprocess import *
 from util import * 
@@ -108,13 +108,14 @@ def train(sess, dataloader, model):
         write_log(flag + " = " + str(FLAGS.__flags[flag]))
     write_log("#######################################################")
     trainset = dataloader.train_set
+    oov_list = dataloader.train_oov_list
     k = 0
     record_k = 0
     loss, start_time = 0.0, time.time()
     record_loss = 0.0
     record_cov_loss = 0.0
     for _ in range(FLAGS.epoch):
-        for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True):
+        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.batch_size, True):
             this_loss, this_covloss = model(x, sess)
             loss += this_loss
             record_loss += this_loss
@@ -269,11 +270,13 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
         texts_path = root_path + "processed_data/valid/valid.box.val"
         gold_path = gold_path_valid
         evalset = dataloader.dev_set
+        oov_list = dataloader.dev_oov_list
     else:
         # texts_path = "original_data/test.summary"
         texts_path = root_path + "processed_data/test/test.box.val"
         gold_path = gold_path_test
         evalset = dataloader.test_set
+        oov_list = dataloader.test_oov_list
     
     # for copy words from the infoboxes
     texts = open(texts_path, 'r').read().strip().split('\n')
@@ -285,33 +288,38 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     pred_unk, pred_mask = [], []
     
     k = 0
-    for x in dataloader.batch_iter(evalset, FLAGS.batch_size, False):
+    for x in dataloader.batch_iter(evalset, oov_list, FLAGS.batch_size, False):
         predictions, atts = model.generate(x, sess)
+        this_oov_list = x['oov_map']
         atts = np.squeeze(atts)
         idx = 0
-        for summary in np.array(predictions):
+        for summary, oov_dict in zip(np.array(predictions), this_oov_list):
             with open(pred_path + str(k), 'w') as sw:
                 summary = list(summary)
                 if 2 in summary:
                     summary = summary[:summary.index(2)] if summary[0] != 2 else [2]
-                real_sum, unk_sum, mask_sum = [], [], []
+                real_sum = []
+                unk_sum = []
                 for tk, tid in enumerate(summary):
-                    if tid == 3:
-                        sub = texts[k][np.argmax(atts[tk,: len(texts[k]),idx])]
-                        real_sum.append(sub)
-                        mask_sum.append("**" + str(sub) + "**")
+                    if tid >= FLAGS.target_vocab:
+                        unk_sum.append("<_UNK_TOKEN>")
+                        if tid in oov_dict:
+                            real_sum.append(oov_dict[tid])
+                        else:
+                            real_sum.append("<_UNK_TOKEN>")
                     else:
                         real_sum.append(v.id2word(tid))
-                        mask_sum.append(v.id2word(tid))
-                    unk_sum.append(v.id2word(tid))
+                        unk_sum.append(v.id2word(tid))
+
+
                 sw.write(" ".join([str(x) for x in real_sum]) + '\n')
                 pred_list.append([str(x) for x in real_sum])
                 pred_unk.append([str(x) for x in unk_sum])
-                pred_mask.append([str(x) for x in mask_sum])
+                # pred_mask.append([str(x) for x in mask_sum])
                 k += 1
                 idx += 1
 
-    write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
+    # write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
     write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
     write_word(pred_list, ksave_dir, mode + "_summary_copy.clean.txt")
 
@@ -375,11 +383,13 @@ def main():
     with tf.Session(config=config) as sess:
         copy_file(save_file_dir)
 
-        init_word_emb = create_init_embedding(vocab_file, FLAGS.extend_vocab_size, word2vec_file, 300)
-        assert len(init_word_emb) == FLAGS.source_vocab
+        # init_word_emb = create_init_embedding(vocab_file, FLAGS.extend_vocab_size, word2vec_file, 300)
+        # assert len(init_word_emb) == (FLAGS.source_vocab + FLAGS.extend_vocab_size)
+
+        init_word_emb = None
 
         dataloader = DataLoader(FLAGS.dir, FLAGS.limits)
-        field_id2word = dataLoader.fieldid2word
+        field_id2word = dataloader.fieldid2word
 
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size, emb_size=FLAGS.emb_size,
                         field_size=FLAGS.field_size, pos_size=FLAGS.pos_size, field_vocab=FLAGS.field_vocab,
@@ -390,7 +400,7 @@ def main():
                         encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
                         use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty,
                         init_word_embedding = init_word_emb, extend_vocab_size=FLAGS.extend_vocab_size,
-                        fieldid2word = field_id2word)
+                        fieldid2word = field_id2word, use_glove=False)
 
         sess.run(tf.global_variables_initializer())
         # copy_file(save_file_dir)

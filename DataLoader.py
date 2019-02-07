@@ -20,8 +20,9 @@ class DataLoader(object):
                               data_dir + '/valid/valid.box.lab.id', data_dir + '/valid/valid.box.pos',
                               data_dir + '/valid/valid.box.rpos']
 
-        self.dev_local_oov_path = root_path + "/valid/valid_local_oov.txt“
-        self.test_local_oov_path = root_path + "/test/test_local_oov.txt“
+        self.train_local_oov_path = data_dir + "/train/train_local_oov.txt"
+        self.dev_local_oov_path = data_dir + "/valid/valid_local_oov.txt"
+        self.test_local_oov_path = data_dir + "/test/test_local_oov.txt"
 
         self.limits = limits
         self.man_text_len = 100
@@ -48,13 +49,32 @@ class DataLoader(object):
 
         self.fieldid2word = np.array(self.fieldid2word)
 
+        self.dev_oov_list = self.load_local_oov(self.dev_local_oov_path)
+        self.test_oov_list = self.load_local_oov(self.test_local_oov_path)
+        self.train_oov_list = self.load_local_oov(self.train_local_oov_path)
+
 
     def load_local_oov(self, path):
+        '''
+        load oov map for each example
+        '''
+        oov_list = []
+        with open(path) as f:
+            for line in f:
+                if line.strip() == "":
+                    oov_list.append({})
+                    continue
+                line_list = line.strip().split("\t")
+                this_oov_dict = {}
+                for item in line_list:
+                    oov_id = int(item.split(":")[0])
+                    oov_word = item.split(":")[1]
 
+                    this_oov_dict[oov_id] = oov_word
 
+                oov_list.append(this_oov_dict)
 
-
-
+        return oov_list
 
 
     def load_data(self, path):
@@ -78,7 +98,7 @@ class DataLoader(object):
         rposes = [list(map(int, rpos.strip().split(' '))) for rpos in rposes]
         return summaries, texts, fields, poses, rposes
 
-    def batch_iter(self, data, batch_size, shuffle):
+    def batch_iter(self, data, oov_list, batch_size, shuffle):
         summaries, texts, fields, poses, rposes = data
         data_size = len(summaries)
         num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
@@ -91,6 +111,7 @@ class DataLoader(object):
             fields = np.array(fields)[shuffle_indices]
             poses = np.array(poses)[shuffle_indices]
             rposes = np.array(rposes)[shuffle_indices]
+            oov_list = np.array(oov_list)[shuffle_indices]
 
         for batch_num in range(num_batches):
             start_index = batch_num * batch_size
@@ -98,11 +119,11 @@ class DataLoader(object):
             max_summary_len = max([len(sample) for sample in summaries[start_index:end_index]])
             max_text_len = max([len(sample) for sample in texts[start_index:end_index]])
             batch_data = {'enc_in':[], 'enc_fd':[], 'enc_pos':[], 'enc_rpos':[], 'enc_len':[],
-                          'dec_in':[], 'dec_len':[], 'dec_out':[]}
+                          'dec_in':[], 'dec_len':[], 'dec_out':[], 'oov_map':[]}
 
-            for summary, text, field, pos, rpos in zip(summaries[start_index:end_index], texts[start_index:end_index],
+            for summary, text, field, pos, rpos, oov in zip(summaries[start_index:end_index], texts[start_index:end_index],
                                             fields[start_index:end_index], poses[start_index:end_index],
-                                            rposes[start_index:end_index]):
+                                            rposes[start_index:end_index], oov_list[start_index:end_index]):
                 summary_len = len(summary)
                 text_len = len(text)
                 pos_len = len(pos)
@@ -156,8 +177,12 @@ class DataLoader(object):
                 batch_data['dec_len'].append(summary_len)
                 batch_data['dec_out'].append(gold)
 
+                batch_data['oov_map'].append(oov)
+
                 # print np.shape(batch_data['enc_fd'])
                 # print np.shape(batch_data['enc_pos'])
+
+                # print batch_data['enc_fd']
   
             yield batch_data
 

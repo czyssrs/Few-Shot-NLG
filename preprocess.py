@@ -305,6 +305,9 @@ def table2id():
     #     fi.close()
     #     fo.close()
 
+    f_test = root_path + "test_case.txt"
+    f_t = open(f_test, "w")
+
     for k, (fs, fv) in enumerate(zip(fsums, fvals)):
         fsum = open(fs)
         fsumo = open(fsums2id[k], 'w')
@@ -369,6 +372,12 @@ def table2id():
             # print " ".join([str(tmp) for tmp in res_val_list])
             # print " ".join([str(tmp) for tmp in line_val_list])
 
+            f_t.write(" ".join([str(tmp) for tmp in res_sum_list]) + "\n")
+            f_t.write(" ".join([str(tmp) for tmp in line_sum_list]) + "\n")
+            f_t.write(" ".join([str(tmp) for tmp in res_val_list]) + "\n")
+            f_t.write(" ".join([str(tmp) for tmp in line_val_list]) + "\n")
+            f_t.write("\n")
+
 
             all_oov += len(local_oov)
             if max_oov < len(local_oov):
@@ -386,6 +395,8 @@ def table2id():
 
         print "Avg oov: ", float(all_oov) / len(lines_sum)
         print "Max oov: ", max_oov
+
+    f_t.close()
 
 
 def preprocess():
