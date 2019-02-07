@@ -1,6 +1,7 @@
 import time, os, sys, shutil, io, subprocess, re
 import tensorflow as tf
 import numpy as np
+import zipfile
 
 # Progress bar
 
@@ -119,7 +120,7 @@ def create_init_embedding(vocab_file, word2vec_file, emblen):
     vocab = load_vocab(vocab_file)
     print "vocab len: ", len(vocab)
 
-    init_embedding = np.random.uniform(-np.sqrt(3), np.sqrt(3), size = (len(vocab), emblen))
+    init_embedding = np.random.uniform(-np.sqrt(3), np.sqrt(3), size = (len(vocab) + extend_vocab_size, emblen))
 
     if word2vec_file.endswith('.gz'):
         word2vec_map = KeyedVectors.load_word2vec_format(word2vec_file, binary=True)
@@ -137,6 +138,10 @@ def create_init_embedding(vocab_file, word2vec_file, emblen):
                 raise ValueError("word2vec dimension doesn't match.")
             init_embedding[vocab[word], :] = vec
             num_covered += 1
+
+    unk_vec = init_embedding[3, :]
+    for ind in range(len(vocab), len(init_embedding)):
+        init_embedding[ind, :] = unk_vec
 
     ## embedding for pad
     # init_embedding[0][:] = np.zeros(emblen)

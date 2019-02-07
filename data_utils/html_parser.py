@@ -343,10 +343,10 @@ if __name__=='__main__':
 
 
 	#### generate data: info box and summary
-	gen_data(raw_dest_path, out_raw)
+	# gen_data(raw_dest_path, out_raw)
 
 	#### tokenize and other filters
-	# tokenize_and_filter(out_raw, out_box, out_summary)
+	tokenize_and_filter(out_raw, out_box, out_summary)
 
 
 

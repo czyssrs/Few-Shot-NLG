@@ -1,11 +1,15 @@
 import re, time, os
 
 # root_path = "/scratch/home/zhiyu/wiki2bio/"
-root_path = "../emb_baseline/"
+root_path = "../emb_baseline_pointer/"
 # merge_word_vocab = "crawled_data/merged_vocab.txt"
 
-merge_field_vocab = "../emb_baseline/pc_books_songs_field_vocab.txt"
-word_vocab = "../emb_baseline/pc_books_songs_word_vocab.txt"
+merge_field_vocab = root_path + "human_books_songs_films_field_vocab.txt"
+word_vocab = root_path + "human_books_songs_films_word_vocab_2000.txt"
+
+### vocab 2000 max 30
+extend_vocab_size = 30
+
 
 def split_infobox():
     """
@@ -170,6 +174,7 @@ class Vocab(object):
         self._word2id = vocab
         self._id2word = {value: key for key, value in vocab.items()}
         print len(vocab)
+        self.vocab_size = len(vocab)
 
         key_map = dict()
         key_map['<_PAD>'] = 0
@@ -185,6 +190,7 @@ class Vocab(object):
                 cnt += 1
         self._key2id = key_map
         self._id2key = {value: key for key, value in key_map.items()}
+        print len(key_map)
 
         #### add for field id to word group mapping
         self._keyid2wordlist =  dict()
@@ -234,6 +240,7 @@ def table2id():
     fsums = [root_path + 'original_data/train.summary',
              root_path + 'original_data/test.summary',
              root_path + 'original_data/valid.summary']
+
     fvals2id = [root_path + 'processed_data/train/train.box.val.id',
                 root_path + 'processed_data/test/test.box.val.id',
                 root_path + 'processed_data/valid/valid.box.val.id']
@@ -243,29 +250,31 @@ def table2id():
     fsums2id = [root_path + 'processed_data/train/train.summary.id',
                 root_path + 'processed_data/test/test.summary.id',
                 root_path + 'processed_data/valid/valid.summary.id']
+
+    f_local_vocab = [root_path + 'processed_data/train/train_local_oov.txt',
+                    root_path + 'processed_data/test/test_local_oov.txt',
+                    root_path + 'processed_data/valid/valid_local_oov.txt']
+
+    # f_decoder_pos = [root_path + 'processed_data/train/train_summary_pos.txt',
+    #                 root_path + 'processed_data/test/test_lsummary_pos.txt',
+    #                 root_path + 'processed_data/valid/valid_summary_pos.txt']
+
+    # f_decoder_rpos = f_decoder_pos = [root_path + 'processed_data/train/train_summary_rpos.txt',
+    #                                     root_path + 'processed_data/test/test_lsummary_rpos.txt',
+    #                                     root_path + 'processed_data/valid/valid_summary_rpos.txt']
+
+
+
     vocab = Vocab()
-    for k, ff in enumerate(fvals):
-        fi = open(ff, 'r')
-        fo = open(fvals2id[k], 'w')
-        for line in fi:
-            items = line.strip().split()
-            fo.write(" ".join([str(vocab.word2id(word)) for word in items]) + '\n')
-        fi.close()
-        fo.close()
+    vocab_size = vocab.vocab_size
+
+    ### field not change
     for k, ff in enumerate(flabs):
         fi = open(ff, 'r')
         fo = open(flabs2id[k], 'w')
         for line in fi:
             items = line.strip().split()
             fo.write(" ".join([str(vocab.key2id(key)) for key in items]) + '\n')
-        fi.close()
-        fo.close()
-    for k, ff in enumerate(fsums):
-        fi = open(ff, 'r')
-        fo = open(fsums2id[k], 'w')
-        for line in fi:
-            items = line.strip().split()
-            fo.write(" ".join([str(vocab.word2id(word)) for word in items]) + '\n')
         fi.close()
         fo.close()
 
@@ -276,17 +285,108 @@ def table2id():
             f.write(str(each_id) + "\t" + " ".join([str(tmp) for tmp in vocab._keyid2wordlist[each_id]]) + "\n")
 
 
-    # ### check
-    # with open(field2word_file) as f:
-    #     for line in f:
-    #         fieldind = int(line.strip().split("\t")[0])
-    #         wordind = [int(tmp) for tmp in line.strip().split("\t")[1].split(" ")]
-    #         print vocab.id2key(fieldind)
 
-    #         for item in wordind:
-    #             print vocab.id2word(item)
+    # ### val and sum extend vocab
+    # for k, ff in enumerate(fsums):
+    #     fi = open(ff, 'r')
+    #     fo = open(fsums2id[k], 'w')
+    #     for line in fi:
+    #         items = line.strip().split()
+    #         fo.write(" ".join([str(vocab.word2id(word)) for word in items]) + '\n')
+    #     fi.close()
+    #     fo.close()
 
-    #         print "\n"
+    # for k, ff in enumerate(fvals):
+    #     fi = open(ff, 'r')
+    #     fo = open(fvals2id[k], 'w')
+    #     for line in fi:
+    #         items = line.strip().split()
+    #         fo.write(" ".join([str(vocab.word2id(word)) for word in items]) + '\n')
+    #     fi.close()
+    #     fo.close()
+
+    for k, (fs, fv) in enumerate(zip(fsums, fvals)):
+        fsum = open(fs)
+        fsumo = open(fsums2id[k], 'w')
+
+        fval = open(fv)
+        fvalo = open(fvals2id[k], 'w')
+
+        f_oov = open(f_local_vocab[k], "w")
+
+        lines_sum = fsum.readlines()
+        lines_val = fval.readlines()
+
+        all_oov = 0
+        find_in_source = 0
+        max_oov = 0
+        max_sub = 0
+
+        for line_sum, line_val in zip(lines_sum, lines_val):
+            line_sum_list = line_sum.strip().split()
+            line_val_list = line_val.strip().split()
+
+            local_oov = {}
+            num_local_oov = 0
+
+            res_sum_list = []
+            res_val_list = []
+
+            for token in line_sum_list:
+                this_vocab_id = vocab.word2id(token)
+                if this_vocab_id != 3:
+                    res_sum_list.append(this_vocab_id)
+                else:
+                    if num_local_oov > extend_vocab_size:
+                        res_sum_list.append(this_vocab_id)
+                        continue
+                    ## oov
+                    # in val oov
+                    if (token in line_val_list) and (token not in local_oov):
+                        local_oov[token] = (vocab_size + num_local_oov)
+                        num_local_oov += 1
+
+                        res_sum_list.append(local_oov[token])
+
+            for token in line_val_list:
+                this_vocab_id = vocab.word2id(token)
+                if this_vocab_id != 3:
+                    res_val_list.append(this_vocab_id)
+                else:
+                    if token in local_oov:
+                        res_val_list.append(local_oov[token])
+                    else:
+                        res_val_list.append(this_vocab_id)
+
+
+            fsumo.write(" ".join([str(tmp) for tmp in res_sum_list]) + "\n")
+            fvalo.write(" ".join([str(tmp) for tmp in res_val_list]) + "\n")
+
+
+            # print "\n"
+            # print " ".join([str(tmp) for tmp in res_sum_list])
+            # print " ".join([str(tmp) for tmp in line_sum_list])
+            # print " ".join([str(tmp) for tmp in res_val_list])
+            # print " ".join([str(tmp) for tmp in line_val_list])
+
+
+            all_oov += len(local_oov)
+            if max_oov < len(local_oov):
+                max_oov = len(local_oov)
+
+
+            oov_write = "\t".join([str(local_oov[token]) + ":" + token for token in local_oov])
+            f_oov.write(oov_write + "\n")
+
+
+        fsumo.close()
+        fvalo.close()
+        f_oov.close()
+
+
+        print "Avg oov: ", float(all_oov) / len(lines_sum)
+        print "Max oov: ", max_oov
+
 
 def preprocess():
     """
@@ -295,18 +395,18 @@ def preprocess():
     For example, for a field (birthname, Jurgis Mikelatitis) in an infoboxes, we represent the field as
     (Jurgis, <birthname, 1, 2>) & (Mikelatitis, <birthname, 2, 1>)
     """
-    print("extracting token, field type and position info from original data ...")
-    time_start = time.time()
-    split_infobox()
-    reverse_pos()
-    duration = time.time() - time_start
-    print("extract finished in %.3f seconds" % float(duration))
+    # print("extracting token, field type and position info from original data ...")
+    # time_start = time.time()
+    # split_infobox()
+    # reverse_pos()
+    # duration = time.time() - time_start
+    # print("extract finished in %.3f seconds" % float(duration))
 
-    print("spliting test and valid summaries for ROUGE evaluation ...")
-    time_start = time.time()
-    split_summary_for_rouge()
-    duration = time.time() - time_start
-    print("split finished in %.3f seconds" % float(duration))
+    # print("spliting test and valid summaries for ROUGE evaluation ...")
+    # time_start = time.time()
+    # split_summary_for_rouge()
+    # duration = time.time() - time_start
+    # print("split finished in %.3f seconds" % float(duration))
 
     print("turning words and field types to ids ...")
     time_start = time.time()
@@ -328,7 +428,7 @@ def make_dirs():
     os.mkdir(root_path + "processed_data/valid/valid_split_for_rouge/")
 
 if __name__ == '__main__':
-    #make_dirs()
+    # make_dirs()
     preprocess()
     check_generated_box()
     print("check done")

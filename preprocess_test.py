@@ -1,4 +1,4 @@
-import re, time, os
+import re, time, os, sys
 
 # root_path = "/scratch/home/zhiyu/wiki2bio/"
 root_path = "../emb_baseline/other_domain_data/"

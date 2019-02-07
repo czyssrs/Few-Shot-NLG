@@ -15,7 +15,8 @@ from OutputUnit import OutputUnit
 class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
-                 encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, init_word_embedding, 
+                 encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
+                 init_word_embedding, extend_vocab_size, fieldid2word,
                  start_token=2, stop_token=2, max_length=150):
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
@@ -55,13 +56,17 @@ class SeqUnit(object):
         self.use_coverage = use_coverage
         self.coverage_penalty = coverage_penalty
 
+        self.extend_vocab_size = extend_vocab_size
+        self.target_vocab_extend = self.target_vocab + self.extend_vocab_size
+        self.dec_input_size = emb_size + field_size + 2 * pos_size
+
         self.units = {}
         self.params = {}
 
         self.encoder_input = tf.placeholder(tf.int32, [None, None])
 
-        # self.encoder_field = tf.placeholder(tf.int32, [None, None])
-        self.encoder_field = tf.placeholder(tf.int32, [None, None, 3])
+        self.encoder_field = tf.placeholder(tf.int32, [None, None])
+        # self.encoder_field = tf.placeholder(tf.int32, [None, None, 3])
 
         self.encoder_pos = tf.placeholder(tf.int32, [None, None])
         self.encoder_rpos = tf.placeholder(tf.int32, [None, None])
@@ -77,7 +82,8 @@ class SeqUnit(object):
             else:
                 print 'normal encoder LSTM'
                 self.enc_lstm = LstmUnit(self.hidden_size, self.uni_size, 'encoder_lstm')
-            self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
+            # self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
+            self.dec_lstm = LstmUnit(self.hidden_size, self.dec_input_size, 'decoder_lstm')
             self.dec_out = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
 
         self.units.update({'encoder_lstm': self.enc_lstm,'decoder_lstm': self.dec_lstm,
@@ -94,31 +100,73 @@ class SeqUnit(object):
             self.embedding = tf.get_variable("init_embedding",
                                              initializer=self.init_emb,
                                              dtype=tf.float32,
-                                             trainable=True)
+                                             trainable=False)
+
+            self.field_id2word = tf.constant(fieldid2word)
 
             self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
             self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
 
-            if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos:
+            if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
                 # self.fembedding = tf.get_variable('fembedding', [self.field_vocab, self.field_size])
                 # self.field_embed = tf.nn.embedding_lookup(self.fembedding, self.encoder_field)
+                self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
                 self.field_embed = tf.reduce_mean(
-                                    tf.nn.embedding_lookup(self.embedding, self.encoder_field), 2)
+                                    tf.nn.embedding_lookup(self.embedding, self.field_word), 2)
 
                 self.field_pos_embed = self.field_embed
-                if self.field_concat:
+                if self.field_concat: # False
                     self.encoder_embed = tf.concat([self.encoder_embed, self.field_embed], 2)
 
-            if self.position_concat or self.encoder_add_pos or self.decoder_add_pos:
+            if self.position_concat or self.encoder_add_pos or self.decoder_add_pos: # True
                 self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
                 self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
                 self.pos_embed = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
                 self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
-                if position_concat:
+                if position_concat: # false
                     self.encoder_embed = tf.concat([self.encoder_embed, self.pos_embed, self.rpos_embed], 2)
                     self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
-                elif self.encoder_add_pos or self.decoder_add_pos:
+                elif self.encoder_add_pos or self.decoder_add_pos: # True
                     self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
+
+
+            ### field + pos + rpos for vocab for each input
+            batch_size = tf.shape(self.encoder_input)[0]
+            shape = tf.constant([batch_size, self.target_vocab_extend])
+
+            batch_nums = tf.range(0, limit=batch_size)
+            batch_nums = tf.expand_dims(batch_nums, 1)
+            batch_nums = tf.tile(batch_nums, [1, encoder_len])
+            indices = tf.stack((batch_nums, self.encoder_input), axis=2) # batch_size * enc_len * 2
+
+            attn_dists_projected = tf.scatter_nd(indices, att_dist, shape)
+
+            # field
+            self.vocab_field_ids = tf.scatter_nd(indices, self.encoder_field, shape) # batch * target_vocab_extend
+            # pos
+            self.vocab_pos = tf.scatter_nd(indices, self.encoder_pos, shape) # batch * target_vocab_extend
+            # rpos 
+            self.vocab_rpos = tf.scatter_nd(indices, self.encoder_rpos, shape) # batch * target_vocab_extend
+
+            ### decoder add field + pos + rpos
+            indices_dec = tf.stack((batch_nums, self.decoder_input), axis=2) # batch_size * enc_len * 2
+            # field
+            self.decoder_field_id = tf.gather_nd(self.vocab_field_ids, indices_dec) # batch_size * dec_len
+            self.decoder_field_word = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_id)
+            self.decoder_field_emb = tf.reduce_mean(
+                                        tf.nn.embedding_lookup(self.embedding, self.decoder_field_word), 2) # batch_size * dec_len * field_emb_size
+
+            # pos
+            self.decoder_pos_id = tf.gather_nd(self.vocab_pos, indices_dec)
+            self.decoder_pos_emb = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_id)
+            # rpos
+            self.decoder_rpos_id = tf.gather_nd(self.vocab_rpos, indices_dec)
+            self.decoder_rpos_emb = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_id)
+
+
+            self.decoder_embed = tf.concat([self.decoder_embed, self.decoder_field_emb, self.decoder_pos_emb, self.decoder_rpos_emb], 2)
+
+
 
         # if self.field_concat or self.fgate_enc:
         #     self.params.update({'fembedding': self.fembedding})
@@ -137,10 +185,12 @@ class SeqUnit(object):
         # ======================================== decoder ======================================== #
 
         if self.dual_att:
-	        print 'dual attention mechanism used'
-	        with tf.variable_scope(scope_name):
-	            self.att_layer = dualAttentionWrapper(self.emb_size, self.hidden_size, self.hidden_size, self.field_attention_size,
-	                                                    en_outputs, self.field_pos_embed, "attention")
+            print 'dual attention mechanism used'
+            with tf.variable_scope(scope_name):
+                # self.att_layer = dualAttentionWrapper(self.emb_size, self.hidden_size, self.hidden_size, self.field_attention_size,
+                #                                         en_outputs, self.field_pos_embed, "attention")
+                self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.dec_input_size, self.field_attention_size,
+                                                        en_outputs, self.field_pos_embed, "attention")
 	            self.units.update({'attention': self.att_layer})
         else:
             print "normal attention used"
@@ -157,7 +207,7 @@ class SeqUnit(object):
         
 
         self.decoder_output_one_hot = tf.one_hot(indices=self.decoder_output, 
-                                                depth=self.target_vocab,
+                                                depth=self.target_vocab_extend,
                                                 axis=-1)
 
         ### original loss with logits
@@ -274,6 +324,9 @@ class SeqUnit(object):
             out_dist = p_gen * tf.nn.softmax(o_t) # batch * self.target_vocab
             att_dist = (1 - p_gen) * o_weight # batch * len
 
+            extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.int32)
+            out_dist = tf.concat(values=[out_dist, extend_zeros], axis=1)
+
             ### coverage
             this_covloss = tf.reduce_sum(tf.minimum(coverage_att_sum, o_weight))
             covloss += this_covloss
@@ -283,7 +336,7 @@ class SeqUnit(object):
             batch_nums = tf.expand_dims(batch_nums, 1)
             batch_nums = tf.tile(batch_nums, [1, encoder_len])
             indices = tf.stack((batch_nums, self.encoder_input), axis=2) # batch_size * enc_len * 2
-            shape = [batch_size, self.target_vocab]
+            shape = [batch_size, self.target_vocab_extend]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape)
 
             final_dists = out_dist + attn_dists_projected
@@ -311,6 +364,13 @@ class SeqUnit(object):
         h0 = initial_state
         f0 = tf.zeros([batch_size], dtype=tf.bool)
         x0 = tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.start_token))
+
+        ### concat with field + pos + rpos to input
+        x0_field = tf.nn.embedding_lookup(self.embedding, tf.zeros([batch_size], dtype=tf.int32))
+        x0_pos = tf.nn.embedding_lookup(self.pembedding, tf.zeros([batch_size], dtype=tf.int32))
+        x0_rpos = tf.nn.embedding_lookup(self.rembedding, tf.zeros([batch_size], dtype=tf.int32))
+        x0 = tf.concat([x0, x0_field, x0_pos, x0_rpos], 1)
+
         emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
         att_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
@@ -330,6 +390,9 @@ class SeqUnit(object):
             out_dist = p_gen * tf.nn.softmax(o_t) # batch * self.target_vocab
             att_dist = (1 - p_gen) * o_weight # batch * len
 
+            extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.int32)
+            out_dist = tf.concat(values=[out_dist, extend_zeros], axis=1)
+
             ### coverage
             coverage_att_sum += o_weight
 
@@ -337,7 +400,7 @@ class SeqUnit(object):
             batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
             batch_nums = tf.tile(batch_nums, [1, encoder_len]) # shape (batch_size, enc_len)
             indices = tf.stack((batch_nums, self.encoder_input), axis=2) # shape (batch_size, enc_len, 2)
-            shape = [batch_size, self.target_vocab]
+            shape = [batch_size, self.target_vocab_extend]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape) # batch * target_vocab
 
             final_dists = out_dist + attn_dists_projected
@@ -346,7 +409,28 @@ class SeqUnit(object):
             emit_ta = emit_ta.write(t, final_dists)
             att_ta = att_ta.write(t, tf.transpose(o_weight, [1,0]))
             next_token = tf.arg_max(final_dists, 1)
-            x_nt = tf.nn.embedding_lookup(self.embedding, next_token)
+            x_nt_word = tf.nn.embedding_lookup(self.embedding, next_token)
+
+
+
+            ### concat with field + pos + rpos
+            batch_num = tf.range(0, limit=batch_size)
+            this_dec_indices = tf.stack([batch_num, x_nt_word], axis=1) # batch_size * 2
+            this_dec_field_id = tf.gather_nd(self.vocab_field_ids, this_dec_indices)
+            this_dec_pos_id = tf.gather_nd(self.vocab_pos, this_dec_indices)
+            this_dec_rpos_id = tf.gather_nd(self.vocab_rpos, this_dec_indices)
+
+            this_dec_field_word = tf.nn.embedding_lookup(self.field_id2word, this_dec_field_id) # batch * 3
+            this_dec_field_emb = tf.reduce_mean(
+                                tf.nn.embedding_lookup(self.embedding, this_dec_field_word), 1) # batch_size * field_emb_size
+
+            this_dec_pos_emb = tf.nn.embedding_lookup(self.pembedding, this_dec_pos_id)
+            this_dec_rpos_emb = tf.nn.embedding_lookup(self.rembedding, this_dec_rpos_id)
+
+            x_nt = tf.concat([x_nt_word, this_dec_field_emb, this_dec_pos_emb, this_dec_rpos_emb], 1)
+
+
+
             finished = tf.logical_or(finished, tf.equal(next_token, self.stop_token))
             finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
             return t+1, x_nt, s_nt, emit_ta, att_ta, coverage_att_sum, finished

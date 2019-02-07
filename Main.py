@@ -23,19 +23,21 @@ tf.app.flags.DEFINE_integer("field_size", 300, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
 tf.app.flags.DEFINE_integer("epoch", 50, "Number of training epoch.")
-tf.app.flags.DEFINE_integer("source_vocab", 30701,'vocabulary size')
-tf.app.flags.DEFINE_integer("field_vocab", 1480,'vocabulary size')
+tf.app.flags.DEFINE_integer("source_vocab", 5420,'vocabulary size')
+tf.app.flags.DEFINE_integer("field_vocab", 2759,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
-tf.app.flags.DEFINE_integer("target_vocab", 30701,'vocabulary size')
+tf.app.flags.DEFINE_integer("target_vocab", 5420,'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 5000,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
 tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
 tf.app.flags.DEFINE_float("coverage_penalty", 0.1,'coverage loss penalty')
 
+tf.app.flags.DEFINE_integer("extend_vocab_size", 30,'extended vocabulary size for oov')
+
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
-tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/emb_baseline/processed_data','data set directory')
+tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data','data set directory')
 tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
 
 
@@ -61,14 +63,14 @@ model_dir = sys.argv[1]
 ###
 # root_path = "/scratch/home/zhiyu/wiki2bio/"
 # root_path = "../"
-root_path = "../emb_baseline/"
+root_path = "../emb_baseline_pointer/"
 gold_path_valid = root_path + 'original_data/valid.summary'
 gold_path_test = root_path + 'original_data/test.summary'
 
-field_vocab_file = root_path + "pc_books_songs_field_vocab.txt"
-vocab_file = root_path + "pc_books_songs_word_vocab.txt"
+field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
+vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
-word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
+word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.42B.300d.zip"
 
 # test phase
 #### need to change!!!
@@ -154,6 +156,112 @@ def save_model(model, save_dir, cnt):
         os.mkdir(nnew_dir)
     model.save(nnew_dir)
     return nnew_dir
+
+
+def evaluate_old(sess, dataloader, model, ksave_dir, mode='valid'):
+    '''
+    original eva fn. with post processing to replace unk
+    '''
+
+    if mode == 'valid':
+        # texts_path = "original_data/valid.summary"
+        texts_path = root_path + "processed_data/valid/valid.box.val"
+        gold_path = gold_path_valid
+        evalset = dataloader.dev_set
+    else:
+        # texts_path = "original_data/test.summary"
+        texts_path = root_path + "processed_data/test/test.box.val"
+        gold_path = gold_path_test
+        evalset = dataloader.test_set
+    
+    # for copy words from the infoboxes
+    texts = open(texts_path, 'r').read().strip().split('\n')
+    texts = [list(t.strip().split()) for t in texts]
+    v = Vocab()
+
+    # with copy
+    pred_list, pred_list_copy, gold_list = [], [], []
+    pred_unk, pred_mask = [], []
+    
+    k = 0
+    for x in dataloader.batch_iter(evalset, FLAGS.batch_size, False):
+        predictions, atts = model.generate(x, sess)
+        atts = np.squeeze(atts)
+        idx = 0
+        for summary in np.array(predictions):
+            with open(pred_path + str(k), 'w') as sw:
+                summary = list(summary)
+                if 2 in summary:
+                    summary = summary[:summary.index(2)] if summary[0] != 2 else [2]
+                real_sum, unk_sum, mask_sum = [], [], []
+                for tk, tid in enumerate(summary):
+                    if tid == 3:
+                        sub = texts[k][np.argmax(atts[tk,: len(texts[k]),idx])]
+                        real_sum.append(sub)
+                        mask_sum.append("**" + str(sub) + "**")
+                    else:
+                        real_sum.append(v.id2word(tid))
+                        mask_sum.append(v.id2word(tid))
+                    unk_sum.append(v.id2word(tid))
+                sw.write(" ".join([str(x) for x in real_sum]) + '\n')
+                pred_list.append([str(x) for x in real_sum])
+                pred_unk.append([str(x) for x in unk_sum])
+                pred_mask.append([str(x) for x in mask_sum])
+                k += 1
+                idx += 1
+
+    write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
+    write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
+    write_word(pred_list, ksave_dir, mode + "_summary_copy.clean.txt")
+
+
+    ### new bleu
+    # print ksave_dir + mode + "_summary_unk.txt"
+    bleu_unk = bleu_score(gold_path, ksave_dir + mode + "_summary_unk.txt")
+    nocopy_result = "without copy BLEU: %.4f\n" % bleu_unk
+    bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary_copy.clean.txt")
+    copy_result = "with copy BLEU: %.4f\n" % bleu_copy
+
+
+    # ### old bleu. too slow
+    # for tk in range(k):
+    #     with open(gold_path + str(tk), 'r') as g:
+    #         gold_list.append([g.read().strip().split()])
+
+    # gold_set = [[gold_path + str(i)] for i in range(k)]
+    # pred_set = [pred_path + str(i) for i in range(k)]
+
+    # # recall, precision, F_measure = PythonROUGE(pred_set, gold_set, ngram_order=4)
+    # # bleu = corpus_bleu(gold_list, pred_list)
+    # # copy_result = "with copy F_measure: %s Recall: %s Precision: %s BLEU: %s\n" % \
+    # # (str(F_measure), str(recall), str(precision), str(bleu))
+    # # print copy_result
+
+    # bleu = corpus_bleu(gold_list, pred_list)
+    # copy_result = "with copy BLEU: %s\n" % (str(bleu))
+    # #print copy_result
+
+    # for tk in range(k):
+    #     with open(pred_path + str(tk), 'w') as sw:
+    #         sw.write(" ".join(pred_unk[tk]) + '\n')
+
+    # # recall, precision, F_measure = PythonROUGE(pred_set, gold_set, ngram_order=4)
+    # # bleu = corpus_bleu(gold_list, pred_unk)
+    # # nocopy_result = "without copy F_measure: %s Recall: %s Precision: %s BLEU: %s\n" % \
+    # # (str(F_measure), str(recall), str(precision), str(bleu))
+    # # print nocopy_result
+
+    # bleu = corpus_bleu(gold_list, pred_unk)
+    # nocopy_result = "without copy BLEU: %s\n" % (str(bleu))
+    #print nocopy_result
+
+    result = copy_result + nocopy_result 
+    print result
+    # if mode == 'valid':
+    #     print result
+
+    return result
+
 
 def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     if mode == 'valid':
@@ -255,8 +363,6 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
 
     return result
 
-
-
 def write_log(s):
     print s
     with open(log_file, 'a') as f:
@@ -269,10 +375,11 @@ def main():
     with tf.Session(config=config) as sess:
         copy_file(save_file_dir)
 
-        init_word_emb = create_init_embedding(vocab_file, word2vec_file, 300)
+        init_word_emb = create_init_embedding(vocab_file, FLAGS.extend_vocab_size, word2vec_file, 300)
         assert len(init_word_emb) == FLAGS.source_vocab
 
         dataloader = DataLoader(FLAGS.dir, FLAGS.limits)
+        field_id2word = dataLoader.fieldid2word
 
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size, emb_size=FLAGS.emb_size,
                         field_size=FLAGS.field_size, pos_size=FLAGS.pos_size, field_vocab=FLAGS.field_vocab,
@@ -282,7 +389,8 @@ def main():
                         fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention, decoder_add_pos=FLAGS.decoder_pos,
                         encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
                         use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty,
-                        init_word_embedding = init_word_emb)
+                        init_word_embedding = init_word_emb, extend_vocab_size=FLAGS.extend_vocab_size,
+                        fieldid2word = field_id2word)
 
         sess.run(tf.global_variables_initializer())
         # copy_file(save_file_dir)
