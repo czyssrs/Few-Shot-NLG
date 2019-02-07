@@ -75,6 +75,13 @@ class SeqUnit(object):
         self.decoder_len = tf.placeholder(tf.int32, [None])
         self.decoder_output = tf.placeholder(tf.int32, [None, None])
         self.enc_mask = tf.sign(tf.to_float(self.encoder_pos))
+
+        ### add field pos rpos to decoder
+        self.decoder_field_input = tf.placeholder(tf.int32, [None, None])
+        self.decoder_pos_input = tf.placeholder(tf.int32, [None, None])
+        self.decoder_rpos_input = tf.placeholder(tf.int32, [None, None])
+
+
         with tf.variable_scope(scope_name):
             if self.fgate_enc:
                 print 'field-gated encoder LSTM'
@@ -134,46 +141,56 @@ class SeqUnit(object):
                     self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
 
 
-            ### field + pos + rpos for vocab for each input
-            batch_size = tf.shape(self.encoder_input)[0]
-            encoder_len = tf.shape(self.encoder_input)[1]
-            decoder_len = tf.shape(self.decoder_input)[1]
-            shape = [batch_size, self.target_vocab_extend]
+            self.field_word_dec = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_input) # batch * dec_len * 3
+            self.field_embed_dec = tf.reduce_mean(
+                                    tf.nn.embedding_lookup(self.embedding, self.field_word_dec), 2)
 
-            batch_nums = tf.range(0, limit=batch_size)
-            batch_nums = tf.expand_dims(batch_nums, 1)
-            batch_nums_enc = tf.tile(batch_nums, [1, encoder_len])
-            batch_nums_dec = tf.tile(batch_nums, [1, decoder_len])
+            self.pos_embed_dec = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_input)
+            self.rpos_embed_dec = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_input)
 
-            indices = tf.stack((batch_nums_enc, self.encoder_input), axis=2) # batch_size * enc_len * 2
-
-            # field
-            self.vocab_field_ids = tf.scatter_nd(indices, self.encoder_field, shape) # batch * target_vocab_extend
-            # pos
-            self.vocab_pos = tf.scatter_nd(indices, self.encoder_pos, shape) # batch * target_vocab_extend
-            # rpos 
-            self.vocab_rpos = tf.scatter_nd(indices, self.encoder_rpos, shape) # batch * target_vocab_extend
-
-            self.test = tf.Print(self.vocab_field_ids, [self.vocab_field_ids], summarize=1000)
-
-            ### decoder add field + pos + rpos
-            indices_dec = tf.stack((batch_nums_dec, self.decoder_input), axis=2) # batch_size * dec_len * 2
-            # field
-            self.decoder_field_id = tf.gather_nd(self.vocab_field_ids, indices_dec) # batch_size * dec_len
-            self.decoder_field_id = tf.zeros([batch_size, decoder_len], dtype=tf.int32)
-            self.decoder_field_word = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_id)
-            self.decoder_field_emb = tf.reduce_mean(
-                                        tf.nn.embedding_lookup(self.embedding, self.decoder_field_word), 2) # batch_size * dec_len * field_emb_size
-
-            # pos
-            self.decoder_pos_id = tf.gather_nd(self.vocab_pos, indices_dec)
-            self.decoder_pos_emb = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_id)
-            # rpos
-            self.decoder_rpos_id = tf.gather_nd(self.vocab_rpos, indices_dec)
-            self.decoder_rpos_emb = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_id)
+            self.decoder_embed = tf.concat([self.decoder_embed, self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
 
 
-            self.decoder_embed = tf.concat([self.decoder_embed, self.decoder_field_emb, self.decoder_pos_emb, self.decoder_rpos_emb], 2)
+            # ### field + pos + rpos for vocab for each input
+            # batch_size = tf.shape(self.encoder_input)[0]
+            # encoder_len = tf.shape(self.encoder_input)[1]
+            # decoder_len = tf.shape(self.decoder_input)[1]
+            # shape = [batch_size, self.target_vocab_extend]
+
+            # batch_nums = tf.range(0, limit=batch_size)
+            # batch_nums = tf.expand_dims(batch_nums, 1)
+            # batch_nums_enc = tf.tile(batch_nums, [1, encoder_len])
+            # batch_nums_dec = tf.tile(batch_nums, [1, decoder_len])
+
+            # indices = tf.stack((batch_nums_enc, self.encoder_input), axis=2) # batch_size * enc_len * 2
+
+            # # field
+            # self.vocab_field_ids = tf.scatter_nd(indices, self.encoder_field, shape) # batch * target_vocab_extend
+            # # pos
+            # self.vocab_pos = tf.scatter_nd(indices, self.encoder_pos, shape) # batch * target_vocab_extend
+            # # rpos 
+            # self.vocab_rpos = tf.scatter_nd(indices, self.encoder_rpos, shape) # batch * target_vocab_extend
+
+            # self.test = tf.Print(self.vocab_field_ids, [self.vocab_field_ids], summarize=1000)
+
+            # ### decoder add field + pos + rpos
+            # indices_dec = tf.stack((batch_nums_dec, self.decoder_input), axis=2) # batch_size * dec_len * 2
+            # # field
+            # self.decoder_field_id = tf.gather_nd(self.vocab_field_ids, indices_dec) # batch_size * dec_len
+            # self.decoder_field_id = tf.zeros([batch_size, decoder_len], dtype=tf.int32)
+            # self.decoder_field_word = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_id)
+            # self.decoder_field_emb = tf.reduce_mean(
+            #                             tf.nn.embedding_lookup(self.embedding, self.decoder_field_word), 2) # batch_size * dec_len * field_emb_size
+
+            # # pos
+            # self.decoder_pos_id = tf.gather_nd(self.vocab_pos, indices_dec)
+            # self.decoder_pos_emb = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_id)
+            # # rpos
+            # self.decoder_rpos_id = tf.gather_nd(self.vocab_rpos, indices_dec)
+            # self.decoder_rpos_emb = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_id)
+
+
+            # self.decoder_embed = tf.concat([self.decoder_embed, self.decoder_field_emb, self.decoder_pos_emb, self.decoder_rpos_emb], 2)
 
 
 
@@ -430,12 +447,36 @@ class SeqUnit(object):
 
 
 
+            # ### concat with field + pos + rpos
+            # batch_num = tf.range(0, limit=batch_size)
+            # this_dec_indices = tf.stack([batch_num, next_token], axis=1) # batch_size * 2
+            # this_dec_field_id = tf.gather_nd(self.vocab_field_ids, this_dec_indices)
+            # this_dec_pos_id = tf.gather_nd(self.vocab_pos, this_dec_indices)
+            # this_dec_rpos_id = tf.gather_nd(self.vocab_rpos, this_dec_indices)
+
+            # this_dec_field_word = tf.nn.embedding_lookup(self.field_id2word, this_dec_field_id) # batch * 3
+            # this_dec_field_emb = tf.reduce_mean(
+            #                     tf.nn.embedding_lookup(self.embedding, this_dec_field_word), 1) # batch_size * field_emb_size
+
+            # this_dec_pos_emb = tf.nn.embedding_lookup(self.pembedding, this_dec_pos_id)
+            # this_dec_rpos_emb = tf.nn.embedding_lookup(self.rembedding, this_dec_rpos_id)
+
+            # x_nt = tf.concat([x_nt_word, this_dec_field_emb, this_dec_pos_emb, this_dec_rpos_emb], 1)
+
             ### concat with field + pos + rpos
+            vocab_max = tf.fill([batch_size], self.source_vocab - 1)
+            mask = tf.cast(tf.greater(next_token, vocab_max), tf.int32)
+
+            att_pos = tf.cast(tf.arg_max(att_dist, 1), tf.int32)
             batch_num = tf.range(0, limit=batch_size)
-            this_dec_indices = tf.stack([batch_num, next_token], axis=1) # batch_size * 2
-            this_dec_field_id = tf.gather_nd(self.vocab_field_ids, this_dec_indices)
-            this_dec_pos_id = tf.gather_nd(self.vocab_pos, this_dec_indices)
-            this_dec_rpos_id = tf.gather_nd(self.vocab_rpos, this_dec_indices)
+            this_dec_indices = tf.stack([batch_num, att_pos], axis=1) # batch_size * 2
+            this_dec_field_id = tf.gather_nd(self.encoder_field, this_dec_indices)
+            this_dec_pos_id = tf.gather_nd(self.encoder_pos, this_dec_indices)
+            this_dec_rpos_id = tf.gather_nd(self.encoder_rpos, this_dec_indices)
+
+            this_dec_field_id = tf.multiply(this_dec_field_id, mask)
+            this_dec_pos_id = tf.multiply(this_dec_pos_id, mask)
+            this_dec_rpos_id = tf.multiply(this_dec_rpos_id, mask)
 
             this_dec_field_word = tf.nn.embedding_lookup(self.field_id2word, this_dec_field_id) # batch * 3
             this_dec_field_emb = tf.reduce_mean(
@@ -445,6 +486,8 @@ class SeqUnit(object):
             this_dec_rpos_emb = tf.nn.embedding_lookup(self.rembedding, this_dec_rpos_id)
 
             x_nt = tf.concat([x_nt_word, this_dec_field_emb, this_dec_pos_emb, this_dec_rpos_emb], 1)
+
+
 
 
 
@@ -595,11 +638,14 @@ class SeqUnit(object):
         return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
     def __call__(self, x, sess):
-        loss,  _, cov_loss, _ = sess.run([self.mean_loss, self.train_op, self.de_conv_loss, self.test],
+        
+        loss,  _, cov_loss = sess.run([self.mean_loss, self.train_op, self.de_conv_loss],
                            {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
                             self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
                             self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                            self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out']})
+                            self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+                            self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+                            self.decoder_rpos_input: x['dec_rpos']})
         return loss, cov_loss
 
     def generate(self, x, sess):

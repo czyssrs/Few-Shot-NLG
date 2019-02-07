@@ -561,7 +561,57 @@ def fuzzy_match(source, substring, field_name):
 
 	return out_summary
 
+def fuzzy_match_rep(source, substring, field_name):
 
+	this_value = substring
+	out_summary = source
+
+	this_value_list_raw = this_value.split(" ")
+	out_summary_list = out_summary.split(" ")
+	# print this_value_list
+	# print out_summary_list
+
+	this_value_list = []
+	for token in this_value_list_raw:
+		if not(token in string.punctuation) \
+			and token != "-lrb-" \
+			and token != "-rrb-" \
+			and token != "-lsb-" \
+			and token != "-rsb-":
+			this_value_list.append(token)
+
+	if len(this_value_list) == 0:
+		return out_summary
+
+	num_consist = 0
+	min_index = len(out_summary_list) + 1
+	max_index = -1
+
+	for token in this_value_list:
+		if token in out_summary_list:
+			num_consist += 1
+			this_ind = out_summary_list.index(token)
+			if this_ind < min_index:
+				min_index = this_ind
+			if this_ind > max_index:
+				max_index = this_ind
+
+	# print num_consist
+	# print min_index
+	# print max_index
+
+
+	if float(num_consist) / len(this_value_list) > 0.4:
+		if max_index - min_index <= 2 * len(this_value_list):
+			### regard as match
+			to_replace = " ".join(out_summary_list[min_index:max_index+1])
+			replace_len = len(to_replace.split(" "))
+			if out_summary.startswith(to_replace):
+				out_summary = out_summary.replace(to_replace + " ", ("<" + field_name + "> ") * replace_len)
+			else:
+				out_summary = out_summary.replace(" " + to_replace + " ", " " + ("<" + field_name + "> ") * replace_len)
+
+	return out_summary
 
 def gen_mask(in_summary, in_box, out_summary, out_box, out_join):
 	'''
@@ -659,26 +709,194 @@ def gen_mask(in_summary, in_box, out_summary, out_box, out_join):
 
 
 
+def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
+	'''
+	replace special token with unk
+	'''
+
+	### load nationality demonyms.csv
+	dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
+
+
+	with open(in_box) as f:
+		lines_box = f.readlines()
+
+	with open(in_summary) as f:
+		lines_summary = f.readlines()
+
+	out_s = open(out_field, "w")
+	out_p = open(out_pos, "w")
+	out_rp = open(out_rpos, "w")
+
+	for box, summary in zip (lines_box, lines_summary):
+
+		box_list = box.strip().split("\t")
+		box_out_list, box_field_list = join_box(box_list)
+
+		tem_summary = summary.strip()
+		out_summary = summary.strip()
+		tem_summary_list = tem_summary.split(" ")
+
+		out_field = np.zeros_like(out_summary.split(" ")).tolist()
+		for ind in range(len(out_field)):
+			out_field[ind] = '<_PAD>'
+
+		out_pos, out_rpos = [], []
+
+		for ind in range(len(out_field)):
+			out_pos.append(0)
+			out_rpos.append(0)
+
+		for (this_name, this_value) in box_field_list:
+
+			this_value_dict = {}
+			for ind, each_token in enumerate(this_value.split(" ")):
+				this_value_dict[each_token] = ind + 1
+
+			this_value_list_len = len(this_value.split(" "))
+
+			if " " + this_value + " " in out_summary:
+
+				out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
+
+
+
+			### name
+			elif out_summary.startswith(this_value + " "):
+				out_summary = out_summary.replace(this_value + " ", ("<" + this_name + "> ") * this_value_list_len)
+
+			### nationality
+			elif this_value in dem_map:
+				this_value_list = dem_map[this_value]
+				for this_value in this_value_list:
+					this_value_list_len = len(this_value.split(" "))
+					if " " + this_value + " " in out_summary:
+
+						out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
+
+
+			else:
+
+				## seperate nationality
+				is_dem_match = 0
+				this_value_list = this_value.split(" , ")
+				if len(this_value_list) > 1:
+					for each_con in this_value_list:
+						if " " + each_con + " " in out_summary and each_con in dem_map:
+							each_con_len = len(each_con.split(" "))
+							out_summary = out_summary.replace(" " + each_con + " ", " " + ("<" + this_name + "> ") * each_con_len)
+							is_dem_match = 1
+							break
+						if each_con in dem_map:
+							this_con_list = dem_map[each_con]
+							for this_con in this_con_list:
+								if " " + this_con + " " in out_summary:
+									this_con_len = len(this_con.split(" "))
+									out_summary = out_summary.replace(" " + this_con + " ", " " + ("<" + this_name + "> ") * this_con_len)
+									is_dem_match = 1
+									break
+
+				if is_dem_match:
+					continue
+
+				### fuzzy match 
+				# match threshold? len percent? start - end index offset
+				out_summary = fuzzy_match_rep(out_summary, this_value, this_name)
+
+			assert len(out_summary.split(" ")) == len(tem_summary_list)
+
+			for ind, token in enumerate(out_summary.split(" ")):
+				if token == "<" + this_name + ">":
+					out_field[ind] = this_name
+					ori_token = tem_summary_list[ind]
+					if ori_token in this_value_dict:
+						out_pos[ind] = this_value_dict[ori_token]
+						out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+
+
+		# print box_list
+		# print out_summary
+		# print summary.strip()
+		# print out_field
+		# print out_pos
+		# print out_rpos
+		# print "\n"
+
+		# out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+		# out_s.write(out_summary + "\n")
+
+		# out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+		# out_t.write(summary.strip() + "\n")
+		# out_t.write(out_summary + "\n")
+		# out_t.write("\n")
+
+		# print out_field
+		# print len(out_field)
+		# print tem_summary
+		# print len(tem_summary_list)
+
+		assert len(out_field) == len(tem_summary_list)
+		assert len(tem_summary_list) == len(out_pos)
+		assert len(tem_summary_list) == len(out_rpos)
+
+
+		out_s.write(" ".join(out_field) + "\n")
+		out_p.write(" ".join([str(tmp) for tmp in out_pos]) + "\n")
+		out_rp.write(" ".join([str(tmp) for tmp in out_rpos]) + "\n")
+
+
+
+	out_s.close()
+	out_p.close()
+	out_rp.close()
+
+
+def dec_checker(summary_in, dec_in):
+
+	with open(summary_in) as f_s:
+		lines_s = f_s.readlines()
+
+	with open(dec_in) as f_d:
+		line_d = f_d.readlines()
+
+
+	ind = 0
+	for summary, dec in zip(lines_s, line_d):
+		len_sum = len(summary.strip().split())
+		len_dec = len(dec.strip().split())
+		ind += 1
+
+
+		if len_sum != len_dec:
+			print str(len_sum) + "\t" + str(len_dec) + "\n"
 
 
 
 
 if __name__=='__main__':
 
-	### generate mask
+
+	# ### generate mask
 	# in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/test.summary"
 	# in_box = "/scratch/home/zhiyu/wiki2bio/original_data/test.box"
-	# out_summary = "/scratch/home/zhiyu/wiki2bio/emb_baseline_mask/original_data/test.summary"
-	# out_box = "/scratch/home/zhiyu/wiki2bio/emb_baseline_mask/original_data/test.box"
-	# out_test_join = "/scratch/home/zhiyu/wiki2bio/emb_baseline_mask/original_data/test.join"
+	# out_field = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test.field"
+	# out_pos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test.pos"
+	# out_rpos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test.rpos"
 
-	# gen_mask(in_summary, in_box, out_summary, out_box, out_test_join)
+	# gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos)
+
+
+	dec_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/train/train.summary.id"
+	summary_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_data/train.summary"
+	dec_checker(summary_in, dec_in)
 
 	# herbert <article_title> , jr. -lrb- born april 21 , 1945 in <birth_place> -rrb- is a former american football player .
 
 	# out_summary = "hassan taftian -lrb- ; born 4 may 1993 in torbat-e heydarieh -rrb- is an iranian sprinter ."
 	# this_value = "04 may 1993"
 	# print fuzzy_match(source, substring, "replace")
+
+
 
 
 	# in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/test.summary"
@@ -715,38 +933,38 @@ if __name__=='__main__':
 	#merge_value_field_vocab("/scratch/home/zhiyu/wiki2bio/original_data/")
 
 
-	data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
+	# data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
 
-	# domain = "books"
-	# in_box = data_path + domain + ".box"
-	# in_summary = data_path + domain + ".summary"
-	# word_vocab_file = data_path + domain + "_word_vocab.txt"
-	# field_vocab_file = data_path + domain + "_field_vocab.txt"
+	# # domain = "books"
+	# # in_box = data_path + domain + ".box"
+	# # in_summary = data_path + domain + ".summary"
+	# # word_vocab_file = data_path + domain + "_word_vocab.txt"
+	# # field_vocab_file = data_path + domain + "_field_vocab.txt"
 
-	# # # pc_all_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/personal_computers_word_vocab_all.txt"
-	# # # final_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_vocab.txt"
-	# # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_field_vocab.txt"
+	# # # # pc_all_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/personal_computers_word_vocab_all.txt"
+	# # # # final_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_vocab.txt"
+	# # # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_field_vocab.txt"
 
-	books_all_vocab = data_path + "books_word_vocab_all.txt"
-	songs_all_vocab = data_path + "songs_word_vocab_all.txt"
-	films_all_vocab = data_path + "films_word_vocab_all.txt"
+	# books_all_vocab = data_path + "books_word_vocab_all.txt"
+	# songs_all_vocab = data_path + "songs_word_vocab_all.txt"
+	# films_all_vocab = data_path + "films_word_vocab_all.txt"
 
-	# # # books_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/books_field_vocab.txt"
-	# # # songs_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs_field_vocab.txt"
-	# # # films_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/films_field_vocab.txt"
+	# # # # books_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/books_field_vocab.txt"
+	# # # # songs_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs_field_vocab.txt"
+	# # # # films_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/films_field_vocab.txt"
 
-	# create_ori_vocab(in_box, in_summary, word_vocab_file, field_vocab_file, 1999)
-	# merge_value_field_vocab(word_vocab_file, field_vocab_file, books_all_vocab)
+	# # create_ori_vocab(in_box, in_summary, word_vocab_file, field_vocab_file, 1999)
+	# # merge_value_field_vocab(word_vocab_file, field_vocab_file, books_all_vocab)
 
-	ori_vocab = data_path + "word_vocab_2000.txt"
-	final_vocab = data_path + "human_books_songs_films_word_vocab_2000.txt"
+	# ori_vocab = data_path + "word_vocab_2000.txt"
+	# final_vocab = data_path + "human_books_songs_films_word_vocab_2000.txt"
 
-	# # # ori_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/field_vocab.txt"
-	# # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/human_books_songs_films_field_vocab.txt"
+	# # # # ori_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/field_vocab.txt"
+	# # # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/human_books_songs_films_field_vocab.txt"
 
-	add_vocab(ori_vocab, books_all_vocab, final_vocab)
-	add_vocab(final_vocab, songs_all_vocab, final_vocab)
-	add_vocab(final_vocab, films_all_vocab, final_vocab)
+	# add_vocab(ori_vocab, books_all_vocab, final_vocab)
+	# add_vocab(final_vocab, songs_all_vocab, final_vocab)
+	# add_vocab(final_vocab, films_all_vocab, final_vocab)
 
 	# add_vocab(ori_field_vocab, books_field_vocab, final_field_vocab)
 	# add_vocab(final_field_vocab, songs_field_vocab, final_field_vocab)

@@ -70,7 +70,7 @@ gold_path_test = root_path + 'original_data/test.summary'
 field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
 vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
-word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.42B.300d.zip"
+word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
 
 # test phase
 #### need to change!!!
@@ -123,6 +123,9 @@ def train(sess, dataloader, model):
             k += 1
             record_k += 1
             progress_bar(k%FLAGS.report, FLAGS.report)
+
+            # ksave_dir = save_model(model, save_dir, k // FLAGS.report)
+            # write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
 
             # ksave_dir = save_model(model, save_dir, k // FLAGS.report)
             # write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
@@ -383,10 +386,10 @@ def main():
     with tf.Session(config=config) as sess:
         copy_file(save_file_dir)
 
-        # init_word_emb = create_init_embedding(vocab_file, FLAGS.extend_vocab_size, word2vec_file, 300)
-        # assert len(init_word_emb) == (FLAGS.source_vocab + FLAGS.extend_vocab_size)
+        init_word_emb = create_init_embedding(vocab_file, FLAGS.extend_vocab_size, word2vec_file, 300)
+        assert len(init_word_emb) == (FLAGS.source_vocab + FLAGS.extend_vocab_size)
 
-        init_word_emb = None
+        # init_word_emb = None
 
         dataloader = DataLoader(FLAGS.dir, FLAGS.limits)
         field_id2word = dataloader.fieldid2word
@@ -400,7 +403,7 @@ def main():
                         encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
                         use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty,
                         init_word_embedding = init_word_emb, extend_vocab_size=FLAGS.extend_vocab_size,
-                        fieldid2word = field_id2word, use_glove=False)
+                        fieldid2word = field_id2word, use_glove=True)
 
         sess.run(tf.global_variables_initializer())
         # copy_file(save_file_dir)

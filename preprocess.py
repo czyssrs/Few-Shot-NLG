@@ -1,4 +1,9 @@
 import re, time, os
+import json
+import zipfile
+import string
+import Queue
+import numpy as np
 
 # root_path = "/scratch/home/zhiyu/wiki2bio/"
 root_path = "../emb_baseline_pointer/"
@@ -10,6 +15,277 @@ word_vocab = root_path + "human_books_songs_films_word_vocab_2000.txt"
 ### vocab 2000 max 30
 extend_vocab_size = 30
 
+def join_box(list_in):
+    '''
+    join original format values
+    '''
+
+    out_list = []
+    current_name = ""
+    current_value = ""
+    # print "\n"
+    # print list_in
+
+    for each_item in list_in:
+        field_name = each_item.split(":")[0]
+        field_value = each_item.split(":")[1]
+
+        if field_name == "":
+            field_name = '<_PAD>'
+        if field_value == "":
+            field_value = "<none>"
+
+        if not field_name[-1].isdigit():
+            if field_value != "<none>":
+                out_list.append((field_name, field_value))
+            continue
+
+        field_name = "_".join(field_name.split("_")[:-1])
+
+        if field_name != current_name:
+            if current_name != "":
+                cur_name_list = [tup[0] for tup in out_list]
+                # print out_list
+                # print field_name
+                # assert field_name not in cur_name_list
+
+                ### remove none value
+                if current_value.strip() != "<none>":
+                    out_list.append((current_name, current_value.strip()))
+                current_name = ""
+                current_value = ""
+
+        current_name = field_name
+        current_value += (field_value + " ")
+
+
+    if current_value.strip() != "<none>":
+        out_list.append((current_name, current_value.strip()))
+
+    sorted_by_second = sorted(out_list, key=lambda tup: len(tup[1].split(" ")), reverse=True)
+
+    return out_list, sorted_by_second
+
+def load_dem_map(file_in):
+    '''
+    recursively load nationality map
+    '''
+    dem_map = {}
+    with open(file_in) as f:
+        for line in f:
+            line_list = line.strip().lower().split(",")
+            if line_list[0] not in dem_map:
+                dem_map[line_list[0]] = []
+            if line_list[1] not in dem_map[line_list[0]]:
+                dem_map[line_list[0]].append(line_list[1])
+
+            if line_list[1] not in dem_map:
+                dem_map[line_list[1]] = []
+            if line_list[0] not in dem_map[line_list[1]]:
+                dem_map[line_list[1]].append(line_list[0])
+
+    final_res_map = {}
+    for each_con in dem_map:
+        res_con = []
+        q = Queue.Queue()
+        q.put(each_con)
+
+        while not q.empty():
+            con = q.get()
+            if con in res_con:
+                continue
+
+            res_con.append(con)
+            if con in dem_map:
+                for each_sub in dem_map[con]:
+                    q.put(each_sub)
+
+        final_res_map[each_con] = res_con
+
+    return final_res_map
+
+def fuzzy_match_rep(source, substring, field_name):
+
+    this_value = substring
+    out_summary = source
+
+    this_value_list_raw = this_value.split(" ")
+    out_summary_list = out_summary.split(" ")
+    # print this_value_list
+    # print out_summary_list
+
+    this_value_list = []
+    for token in this_value_list_raw:
+        if not(token in string.punctuation) \
+            and token != "-lrb-" \
+            and token != "-rrb-" \
+            and token != "-lsb-" \
+            and token != "-rsb-":
+            this_value_list.append(token)
+
+    if len(this_value_list) == 0:
+        return out_summary
+
+    num_consist = 0
+    min_index = len(out_summary_list) + 1
+    max_index = -1
+
+    for token in this_value_list:
+        if token in out_summary_list:
+            num_consist += 1
+            this_ind = out_summary_list.index(token)
+            if this_ind < min_index:
+                min_index = this_ind
+            if this_ind > max_index:
+                max_index = this_ind
+
+    # print num_consist
+    # print min_index
+    # print max_index
+
+
+    if float(num_consist) / len(this_value_list) > 0.4:
+        if max_index - min_index <= 2 * len(this_value_list):
+            ### regard as match
+            to_replace = " ".join(out_summary_list[min_index:max_index+1])
+            replace_len = len(to_replace.split(" "))
+            if out_summary.startswith(to_replace):
+                out_summary = out_summary.replace(to_replace + " ", ("<" + field_name + "> ") * replace_len)
+            else:
+                out_summary = out_summary.replace(" " + to_replace + " ", " " + ("<" + field_name + "> ") * replace_len)
+
+    return out_summary
+
+def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
+    '''
+    replace special token with unk
+    '''
+
+    ### load nationality demonyms.csv
+    dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
+
+
+    with open(in_box) as f:
+        lines_box = f.readlines()
+
+    with open(in_summary) as f:
+        lines_summary = f.readlines()
+
+    out_s = open(out_field, "w")
+    out_p = open(out_pos, "w")
+    out_rp = open(out_rpos, "w")
+
+    for box, summary in zip (lines_box, lines_summary):
+
+        box_list = box.strip().split("\t")
+        box_out_list, box_field_list = join_box(box_list)
+
+        tem_summary = summary.strip()
+        out_summary = summary.strip()
+        tem_summary_list = tem_summary.split(" ")
+
+        out_field = np.zeros_like(out_summary.split(" ")).tolist()
+        for ind in range(len(out_field)):
+            out_field[ind] = '<_PAD>'
+
+        out_pos, out_rpos = [], []
+
+        for ind in range(len(out_field)):
+            out_pos.append(0)
+            out_rpos.append(0)
+
+        for (this_name, this_value) in box_field_list:
+
+            this_value_dict = {}
+            for ind, each_token in enumerate(this_value.split(" ")):
+                this_value_dict[each_token] = ind + 1
+
+            this_value_list_len = len(this_value.split(" "))
+
+            if " " + this_value + " " in out_summary:
+
+                out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
+
+
+
+            ### name
+            elif out_summary.startswith(this_value + " "):
+                out_summary = out_summary.replace(this_value + " ", ("<" + this_name + "> ") * this_value_list_len)
+
+            ### nationality
+            elif this_value in dem_map:
+                this_value_list = dem_map[this_value]
+                for this_value in this_value_list:
+                    this_value_list_len = len(this_value.split(" "))
+                    if " " + this_value + " " in out_summary:
+
+                        out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
+
+
+            else:
+
+                ## seperate nationality
+                is_dem_match = 0
+                this_value_list = this_value.split(" , ")
+                if len(this_value_list) > 1:
+                    for each_con in this_value_list:
+                        if " " + each_con + " " in out_summary and each_con in dem_map:
+                            each_con_len = len(each_con.split(" "))
+                            out_summary = out_summary.replace(" " + each_con + " ", " " + ("<" + this_name + "> ") * each_con_len)
+                            is_dem_match = 1
+                            break
+                        if each_con in dem_map:
+                            this_con_list = dem_map[each_con]
+                            for this_con in this_con_list:
+                                if " " + this_con + " " in out_summary:
+                                    this_con_len = len(this_con.split(" "))
+                                    out_summary = out_summary.replace(" " + this_con + " ", " " + ("<" + this_name + "> ") * this_con_len)
+                                    is_dem_match = 1
+                                    break
+
+                if is_dem_match:
+                    continue
+
+                ### fuzzy match 
+                # match threshold? len percent? start - end index offset
+                out_summary = fuzzy_match_rep(out_summary, this_value, this_name)
+
+            assert len(out_summary.split(" ")) == len(tem_summary_list)
+
+            for ind, token in enumerate(out_summary.split(" ")):
+                if token == "<" + this_name + ">":
+                    out_field[ind] = this_name
+                    ori_token = tem_summary_list[ind]
+                    if ori_token in this_value_dict:
+                        out_pos[ind] = this_value_dict[ori_token]
+                        out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+
+
+        # print box_list
+        # print out_summary
+        # print summary.strip()
+        # print out_field
+        # print out_pos
+        # print out_rpos
+        # print "\n"
+
+        # out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+        # out_s.write(out_summary + "\n")
+
+        # out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+        # out_t.write(summary.strip() + "\n")
+        # out_t.write(out_summary + "\n")
+        # out_t.write("\n")
+
+        out_s.write(" ".join(out_field) + "\n")
+        out_p.write(" ".join([str(tmp) for tmp in out_pos]) + "\n")
+        out_rp.write(" ".join([str(tmp) for tmp in out_rpos]) + "\n")
+
+
+
+    out_s.close()
+    out_p.close()
+    out_rp.close()
 
 def split_infobox():
     """
@@ -251,17 +527,29 @@ def table2id():
                 root_path + 'processed_data/test/test.summary.id',
                 root_path + 'processed_data/valid/valid.summary.id']
 
+
+
     f_local_vocab = [root_path + 'processed_data/train/train_local_oov.txt',
                     root_path + 'processed_data/test/test_local_oov.txt',
                     root_path + 'processed_data/valid/valid_local_oov.txt']
 
-    # f_decoder_pos = [root_path + 'processed_data/train/train_summary_pos.txt',
-    #                 root_path + 'processed_data/test/test_lsummary_pos.txt',
-    #                 root_path + 'processed_data/valid/valid_summary_pos.txt']
+    f_decoder_field = [root_path + 'processed_data/train/train_summary_field.txt',
+                        root_path + 'processed_data/test/test_summary_field.txt',
+                        root_path + 'processed_data/valid/valid_summary_field.txt']
 
-    # f_decoder_rpos = f_decoder_pos = [root_path + 'processed_data/train/train_summary_rpos.txt',
-    #                                     root_path + 'processed_data/test/test_lsummary_rpos.txt',
-    #                                     root_path + 'processed_data/valid/valid_summary_rpos.txt']
+    f_decoder_field_id = [root_path + 'processed_data/train/train_summary_field_id.txt',
+                        root_path + 'processed_data/test/test_summary_field_id.txt',
+                        root_path + 'processed_data/valid/valid_summary_field_id.txt']
+
+    f_decoder_pos = [root_path + 'processed_data/train/train_summary_pos.txt',
+                    root_path + 'processed_data/test/test_summary_pos.txt',
+                    root_path + 'processed_data/valid/valid_summary_pos.txt']
+
+    f_decoder_rpos = [root_path + 'processed_data/train/train_summary_rpos.txt',
+                    root_path + 'processed_data/test/test_summary_rpos.txt',
+                    root_path + 'processed_data/valid/valid_summary_rpos.txt']
+
+    boxes = [root_path + "original_data/train.box", root_path + "original_data/test.box", root_path + "original_data/valid.box"]
 
 
 
@@ -305,8 +593,26 @@ def table2id():
     #     fi.close()
     #     fo.close()
 
-    f_test = root_path + "test_case.txt"
-    f_t = open(f_test, "w")
+    # f_test = root_path + "test_case.txt"
+    # f_t = open(f_test, "w")
+
+
+    ### gen field, pos for decoder
+
+    for k, (fs, fb) in enumerate(zip(fsums, boxes)):
+
+        gen_mask_field_pos(fs, fb, f_decoder_field[k], f_decoder_pos[k], f_decoder_rpos[k])
+
+
+    for k, ff in enumerate(f_decoder_field):
+        fi = open(ff, 'r')
+        fo = open(f_decoder_field_id[k], 'w')
+        for line in fi:
+            items = line.strip().split()
+            fo.write(" ".join([str(vocab.key2id(key)) for key in items]) + '\n')
+        fi.close()
+        fo.close()
+
 
     for k, (fs, fv) in enumerate(zip(fsums, fvals)):
         fsum = open(fs)
@@ -345,11 +651,16 @@ def table2id():
                         continue
                     ## oov
                     # in val oov
-                    if (token in line_val_list) and (token not in local_oov):
-                        local_oov[token] = (vocab_size + num_local_oov)
-                        num_local_oov += 1
+                    if token in line_val_list:
+                        if token not in local_oov:
+                            local_oov[token] = (vocab_size + num_local_oov)
+                            num_local_oov += 1
 
                         res_sum_list.append(local_oov[token])
+
+                    else:
+                        res_sum_list.append(this_vocab_id)
+
 
             for token in line_val_list:
                 this_vocab_id = vocab.word2id(token)
@@ -365,6 +676,8 @@ def table2id():
             fsumo.write(" ".join([str(tmp) for tmp in res_sum_list]) + "\n")
             fvalo.write(" ".join([str(tmp) for tmp in res_val_list]) + "\n")
 
+            assert len(res_sum_list) == len(line_sum_list)
+
 
             # print "\n"
             # print " ".join([str(tmp) for tmp in res_sum_list])
@@ -372,11 +685,11 @@ def table2id():
             # print " ".join([str(tmp) for tmp in res_val_list])
             # print " ".join([str(tmp) for tmp in line_val_list])
 
-            f_t.write(" ".join([str(tmp) for tmp in res_sum_list]) + "\n")
-            f_t.write(" ".join([str(tmp) for tmp in line_sum_list]) + "\n")
-            f_t.write(" ".join([str(tmp) for tmp in res_val_list]) + "\n")
-            f_t.write(" ".join([str(tmp) for tmp in line_val_list]) + "\n")
-            f_t.write("\n")
+            # f_t.write(" ".join([str(tmp) for tmp in res_sum_list]) + "\n")
+            # f_t.write(" ".join([str(tmp) for tmp in line_sum_list]) + "\n")
+            # f_t.write(" ".join([str(tmp) for tmp in res_val_list]) + "\n")
+            # f_t.write(" ".join([str(tmp) for tmp in line_val_list]) + "\n")
+            # f_t.write("\n")
 
 
             all_oov += len(local_oov)
@@ -396,7 +709,7 @@ def table2id():
         print "Avg oov: ", float(all_oov) / len(lines_sum)
         print "Max oov: ", max_oov
 
-    f_t.close()
+    # f_t.close()
 
 
 def preprocess():

@@ -12,13 +12,18 @@ class DataLoader(object):
     def __init__(self, data_dir, limits):
         self.train_data_path = [data_dir + '/train/train.summary.id', data_dir + '/train/train.box.val.id',
                                 data_dir + '/train/train.box.lab.id', data_dir + '/train/train.box.pos',
-                                data_dir + '/train/train.box.rpos']
+                                data_dir + '/train/train.box.rpos', data_dir + '/train/train_summary_field_id.txt',
+                                data_dir + '/train/train_summary_pos.txt', data_dir + '/train/train_summary_rpos.txt']
+
         self.test_data_path = [data_dir + '/test/test.summary.id', data_dir + '/test/test.box.val.id',
                                data_dir + '/test/test.box.lab.id', data_dir + '/test/test.box.pos',
-                               data_dir + '/test/test.box.rpos']
+                               data_dir + '/test/test.box.rpos', data_dir + '/test/test_summary_field_id.txt',
+                                data_dir + '/test/test_summary_pos.txt', data_dir + '/test/test_summary_rpos.txt']
+
         self.dev_data_path = [data_dir + '/valid/valid.summary.id', data_dir + '/valid/valid.box.val.id',
                               data_dir + '/valid/valid.box.lab.id', data_dir + '/valid/valid.box.pos',
-                              data_dir + '/valid/valid.box.rpos']
+                              data_dir + '/valid/valid.box.rpos', data_dir + '/valid/valid_summary_field_id.txt',
+                                data_dir + '/valid/valid_summary_pos.txt', data_dir + '/valid/valid_summary_rpos.txt']
 
         self.train_local_oov_path = data_dir + "/train/train_local_oov.txt"
         self.dev_local_oov_path = data_dir + "/valid/valid_local_oov.txt"
@@ -78,28 +83,39 @@ class DataLoader(object):
 
 
     def load_data(self, path):
-        summary_path, text_path, field_path, pos_path, rpos_path = path
+        summary_path, text_path, field_path, pos_path, rpos_path, dec_field, dec_pos, dec_rpos = path
         summaries = open(summary_path, 'r').read().strip().split('\n')
         texts = open(text_path, 'r').read().strip().split('\n')
         fields = open(field_path, 'r').read().strip().split('\n')
         poses = open(pos_path, 'r').read().strip().split('\n')
         rposes = open(rpos_path, 'r').read().strip().split('\n')
+        decoder_field = open(dec_field).read().strip().split('\n')
+        decoder_pos = open(dec_pos).read().strip().split('\n')
+        decoder_rpos = open(dec_rpos).read().strip().split('\n')
+
         if self.limits > 0:
             summaries = summaries[:self.limits]
             texts = texts[:self.limits]
             fields = fields[:self.limits]
             poses = poses[:self.limits]
             rposes = rposes[:self.limits]
+            decoder_field = decoder_field[:self.limits]
+            decoder_pos = decoder_pos[:self.limits]
+            decoder_rpos = decoder_rpos[:self.limits]
+
         print summaries[0].strip().split(' ')
         summaries = [list(map(int, summary.strip().split(' '))) for summary in summaries]
         texts = [list(map(int, text.strip().split(' '))) for text in texts]
         fields = [list(map(int, field.strip().split(' '))) for field in fields]
         poses = [list(map(int, pos.strip().split(' '))) for pos in poses]
         rposes = [list(map(int, rpos.strip().split(' '))) for rpos in rposes]
-        return summaries, texts, fields, poses, rposes
+        decoder_field = [list(map(int, field.strip().split(' '))) for field in decoder_field]
+        decoder_pos = [list(map(int, pos.strip().split(' '))) for pos in decoder_pos]
+        decoder_rpos = [list(map(int, rpos.strip().split(' '))) for rpos in decoder_rpos]
+        return summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos
 
     def batch_iter(self, data, oov_list, batch_size, shuffle):
-        summaries, texts, fields, poses, rposes = data
+        summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos = data
         data_size = len(summaries)
         num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
             else int(data_size / batch_size) + 1
@@ -111,7 +127,12 @@ class DataLoader(object):
             fields = np.array(fields)[shuffle_indices]
             poses = np.array(poses)[shuffle_indices]
             rposes = np.array(rposes)[shuffle_indices]
+            
             oov_list = np.array(oov_list)[shuffle_indices]
+
+            decoder_field = np.array(decoder_field)[shuffle_indices]
+            decoder_pos = np.array(decoder_pos)[shuffle_indices]
+            decoder_rpos = np.array(decoder_rpos)[shuffle_indices]
 
         for batch_num in range(num_batches):
             start_index = batch_num * batch_size
@@ -119,11 +140,14 @@ class DataLoader(object):
             max_summary_len = max([len(sample) for sample in summaries[start_index:end_index]])
             max_text_len = max([len(sample) for sample in texts[start_index:end_index]])
             batch_data = {'enc_in':[], 'enc_fd':[], 'enc_pos':[], 'enc_rpos':[], 'enc_len':[],
-                          'dec_in':[], 'dec_len':[], 'dec_out':[], 'oov_map':[]}
+                          'dec_in':[], 'dec_len':[], 'dec_out':[], 'oov_map':[], 'dec_field':[],
+                          'dec_pos':[], 'dec_rpos':[]}
 
-            for summary, text, field, pos, rpos, oov in zip(summaries[start_index:end_index], texts[start_index:end_index],
+            for summary, text, field, pos, rpos, oov, dec_field, dec_pos, dec_rpos in zip(summaries[start_index:end_index], texts[start_index:end_index],
                                             fields[start_index:end_index], poses[start_index:end_index],
-                                            rposes[start_index:end_index], oov_list[start_index:end_index]):
+                                            rposes[start_index:end_index], oov_list[start_index:end_index],
+                                            decoder_field[start_index:end_index], decoder_pos[start_index:end_index],
+                                            decoder_rpos[start_index:end_index]):
                 summary_len = len(summary)
                 text_len = len(text)
                 pos_len = len(pos)
@@ -131,6 +155,9 @@ class DataLoader(object):
                 assert text_len == len(field)
                 assert pos_len == len(field)
                 assert rpos_len == pos_len
+
+                assert len(dec_field) == len(summary)
+
                 gold = summary + [2] + [0] * (max_summary_len - summary_len)
                 summary = summary + [0] * (max_summary_len - summary_len)
 
@@ -138,6 +165,12 @@ class DataLoader(object):
                 field = field + [0] * (max_text_len - text_len)
                 pos = pos + [0] * (max_text_len - text_len)
                 rpos = rpos + [0] * (max_text_len - text_len)
+
+                dec_field = dec_field + [0] * (max_summary_len - summary_len)
+                dec_pos = dec_pos + [0] * (max_summary_len - summary_len)
+                dec_rpos = dec_rpos + [0] * (max_summary_len - summary_len)
+
+                # assert len(dec_field) == len(summary)
 
                 # ###
                 # emb_field = []
@@ -158,12 +191,18 @@ class DataLoader(object):
                 ### OOM
                 if max_summary_len > self.man_summary_len:
                     summary = summary[:self.man_summary_len - 1]
+                    dec_field = dec_field[:self.man_summary_len - 1]
+                    dec_pos = dec_pos[:self.man_summary_len - 1]
+                    dec_rpos = dec_rpos[:self.man_summary_len - 1]
+
+
                     if gold[self.man_summary_len - 2] == 0:
                         gold = gold[:self.man_summary_len - 1] + [0]
                     else:
                         gold = gold[:self.man_summary_len - 1] + [2]
                     if summary_len > self.man_summary_len - 1:
                         summary_len = self.man_summary_len - 1
+
                 
                 batch_data['enc_in'].append(text)
                 batch_data['enc_len'].append(text_len)
@@ -179,11 +218,20 @@ class DataLoader(object):
 
                 batch_data['oov_map'].append(oov)
 
+                batch_data['dec_field'].append(dec_field)
+                batch_data['dec_pos'].append(dec_pos)
+                batch_data['dec_rpos'].append(dec_rpos)
+
                 # print np.shape(batch_data['enc_fd'])
                 # print np.shape(batch_data['enc_pos'])
 
                 # print batch_data['enc_fd']
+
+                # print batch_data['dec_rpos'][0]
+                # print batch_data['enc_rpos'][0]
   
+                # for item in batch_data['dec_field']:
+                #     print len(item)
             yield batch_data
 
 
