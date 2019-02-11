@@ -18,31 +18,32 @@ from util import *
 
 
 ### data
-tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data','data set directory')
+tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data_books','data set directory')
+tf.app.flags.DEFINE_integer("fine_tune_size", 10, "number of fine tune examples")
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
 tf.app.flags.DEFINE_integer("emb_size", 300, "Size of embedding.")
 tf.app.flags.DEFINE_integer("field_size", 300, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
-tf.app.flags.DEFINE_integer("epoch", 50, "Number of training epoch.")
+tf.app.flags.DEFINE_integer("epoch", 10, "Number of training epoch.")
 tf.app.flags.DEFINE_integer("source_vocab", 5420,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2759,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 5420,'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 1000,'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report", 1,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
 tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
 tf.app.flags.DEFINE_float("coverage_penalty", 1.0,'coverage loss penalty')
 
 tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
-tf.app.flags.DEFINE_float("copy_gate_penalty", 0.5, 'copy gate loss penalty')
+tf.app.flags.DEFINE_float("copy_gate_penalty", 10.0,'copy gate loss penalty')
 
 tf.app.flags.DEFINE_integer("extend_vocab_size", 200,'extended vocabulary size for oov')
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
-tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
+tf.app.flags.DEFINE_string("load",'6','load directory') # BBBBBESTOFAll
 tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
 
 
@@ -59,47 +60,55 @@ tf.app.flags.DEFINE_integer("report_loss", 100,'report loss results after some s
 FLAGS = tf.app.flags.FLAGS
 last_best = 0.0
 
+### pre-trained model dir
 model_dir = sys.argv[1]
+domain = sys.argv[2]
 
 ### path for calculate ROUGE
 # gold_path_test = 'processed_data/test/test_split_for_rouge/gold_summary_'
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
-###
-# root_path = "/scratch/home/zhiyu/wiki2bio/"
-# root_path = "../"
+
 root_path = "../emb_baseline_pointer/"
 gold_path_valid = root_path + 'original_data/valid.summary'
-gold_path_test = root_path + 'original_data/test.summary'
+gold_path_test = root_path + 'other_domain_data/books/test_fine_tune_10/test.summary'
 
 field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
 vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
 word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
 
+results_fine_tune = "results_" + domain
+
+base_model_dir = root_path + 'results/res/' + model_dir + '/loads/' + FLAGS.load + '/'
+
 ### vocab for test. in preprocess.py
 v = Vocab(vocab_file, field_vocab_file)
 
 # test phase
-#### need to change!!!
-if FLAGS.load != "0":
-    save_dir = root_path + 'results/res/' + model_dir + '/loads/' + FLAGS.load + '/'
-    save_file_dir = root_path + 'results/res/' + model_dir + '/' + 'files/'
-    pred_dir = root_path + 'results/evaluation/' + model_dir + '/' + FLAGS.load + '/'
+if FLAGS.mode == "test":
+    save_dir = root_path + results_fine_tune + '/res/' + model_dir + '/loads/' + FLAGS.load + '/'
+    save_file_dir = root_path + results_fine_tune + '/res/' + model_dir + '/' + 'files/'
+    pred_dir = root_path + results_fine_tune + '/evaluation/' + model_dir + '/' + FLAGS.load + '/'
     if not os.path.exists(pred_dir):
         os.mkdir(pred_dir)
     if not os.path.exists(save_file_dir):
         os.mkdir(save_file_dir)
     pred_path = pred_dir + 'pred_summary_'
     pred_beam_path = pred_dir + 'beam_summary_'
+
 # train phase
 else:
-    # prefix = str(int(time.time() * 1000))
-    os.mkdir(root_path + 'results/res/' + model_dir)
-    os.mkdir(root_path + 'results/evaluation/' + model_dir)
-    save_dir = root_path + 'results/res/' + model_dir + '/'
+
+    if not os.path.exists(root_path + results_fine_tune):
+        os.mkdir(root_path + results_fine_tune)
+        os.mkdir(root_path + results_fine_tune + "/res/")
+        os.mkdir(root_path + results_fine_tune + "/evaluation/")
+    os.mkdir(root_path + results_fine_tune + '/res/' + model_dir)
+    os.mkdir(root_path + results_fine_tune + '/evaluation/' + model_dir)
+    save_dir = root_path + results_fine_tune + '/res/' + model_dir + '/'
     save_file_dir = save_dir + 'files/'
-    pred_dir = root_path + 'results/evaluation/' + model_dir + '/'
+    pred_dir = root_path + results_fine_tune + '/evaluation/' + model_dir + '/'
     if not os.path.exists(pred_dir):
         os.mkdir(pred_dir)
     if not os.path.exists(save_file_dir):
@@ -125,7 +134,7 @@ def train(sess, dataloader, model):
     record_copy_loss = 0.0
 
     for _ in range(FLAGS.epoch):
-        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.batch_size, True):
+        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.fine_tune_size, True):
             this_loss, this_covloss, this_copy_gate_loss = model(x, sess)
             loss += this_loss
             record_loss += this_loss
@@ -133,29 +142,23 @@ def train(sess, dataloader, model):
             record_copy_loss += this_copy_gate_loss
             k += 1
             record_k += 1
-            progress_bar(k%FLAGS.report, FLAGS.report)
 
-            # ksave_dir = save_model(model, save_dir, k // FLAGS.report)
-            # write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
+            write_log("%d : loss = %.3f, covloss = %.3f, copyloss = %.3f" % \
+                (k, record_loss / record_k, record_cov_loss / record_k, record_copy_loss / record_k))
+            record_k = 0
+            record_loss = 0.0
+            record_cov_loss = 0.0
+            record_copy_loss = 0.0
 
-            ### czy
-            if (record_k % FLAGS.report_loss == 0):
-                write_log("%d : loss = %.3f, covloss = %.3f, copyloss = %.3f" % \
-                    (k, record_loss / record_k, record_cov_loss / record_k, record_copy_loss / record_k))
-                record_k = 0
-                record_loss = 0.0
-                record_cov_loss = 0.0
-                record_copy_loss = 0.0
+            # if (k % FLAGS.report == 0):
+            #     print "Round: ", k / FLAGS.report
+            #     cost_time = time.time() - start_time
+            #     write_log("%d : loss = %.3f, time = %.3f " % (k // FLAGS.report, loss, cost_time))
+            #     loss, start_time = 0.0, time.time()
 
-            if (k % FLAGS.report == 0):
-                print "Round: ", k / FLAGS.report
-                cost_time = time.time() - start_time
-                write_log("%d : loss = %.3f, time = %.3f " % (k // FLAGS.report, loss, cost_time))
-                loss, start_time = 0.0, time.time()
-                if k // FLAGS.report >= 1: 
-                    ksave_dir = save_model(model, save_dir, k // FLAGS.report)
-                    write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
-                    write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
+    ksave_dir = save_model(model, save_dir, k // FLAGS.report)
+    write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
+    write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
                     
 
 
@@ -295,6 +298,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     # with copy
     pred_list, pred_list_copy, gold_list = [], [], []
     pred_unk, pred_mask = [], []
+
     
     k = 0
     for x in dataloader.batch_iter(evalset, oov_list, FLAGS.batch_size, False):
@@ -379,9 +383,9 @@ def main():
                         use_copy_gate=FLAGS.use_copy_gate)
 
         sess.run(tf.global_variables_initializer())
-        # copy_file(save_file_dir)
-        if FLAGS.load != '0':
-            model.load(save_dir)
+
+        # model.load(base_model_dir)
+
         if FLAGS.mode == 'train':
             train(sess, dataloader, model)
         else:

@@ -3,7 +3,9 @@ import json
 import zipfile
 import string
 import Queue
+from tqdm import tqdm
 import numpy as np
+from nltk.corpus import stopwords
 
 # root_path = "/scratch/home/zhiyu/wiki2bio/"
 root_path = "../emb_baseline_pointer/"
@@ -13,7 +15,7 @@ merge_field_vocab = root_path + "human_books_songs_films_field_vocab.txt"
 word_vocab = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
 ### vocab 2000 max 30
-extend_vocab_size = 30
+extend_vocab_size = 200
 
 def join_box(list_in):
     '''
@@ -164,6 +166,9 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
     ### load nationality demonyms.csv
     dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
 
+    sw = stopwords.words("english")
+    freq_vocab = load_local_vocab(root_path + "human_books_songs_films_word_vocab_200.txt")
+
 
     with open(in_box) as f:
         lines_box = f.readlines()
@@ -175,7 +180,7 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
     out_p = open(out_pos, "w")
     out_rp = open(out_rpos, "w")
 
-    for box, summary in zip (lines_box, lines_summary):
+    for box, summary in tqdm(zip(lines_box, lines_summary)):
 
         box_list = box.strip().split("\t")
         box_out_list, box_field_list = join_box(box_list)
@@ -198,7 +203,8 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 
             this_value_dict = {}
             for ind, each_token in enumerate(this_value.split(" ")):
-                this_value_dict[each_token] = ind + 1
+                if each_token not in this_value_dict:
+                    this_value_dict[each_token] = ind + 1
 
             this_value_list_len = len(this_value.split(" "))
 
@@ -260,7 +266,6 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
                         out_pos[ind] = this_value_dict[ori_token]
                         out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
 
-
         # print box_list
         # print out_summary
         # print summary.strip()
@@ -269,13 +274,48 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
         # print out_rpos
         # print "\n"
 
-        # out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
-        # out_s.write(out_summary + "\n")
+        ### second fuzzy match. by individual word
+        for (this_name, this_value) in box_field_list:
 
-        # out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
-        # out_t.write(summary.strip() + "\n")
-        # out_t.write(out_summary + "\n")
-        # out_t.write("\n")
+            this_value_dict = {}
+            for ind, each_token in enumerate(this_value.split(" ")):
+                if each_token not in this_value_dict:
+                    this_value_dict[each_token] = ind + 1
+
+            this_value_list_len = len(this_value.split(" "))
+            this_value_list = this_value.split(" ")
+
+            for ind, each_token in enumerate(out_summary.split(" ")):
+
+                ### most freq 500 still looks domain specific
+                if (each_token not in sw) and (each_token not in freq_vocab):
+                # if (each_token not in sw):
+                    if each_token in this_value_dict:
+                        out_summary.replace(" " + each_token + " ", " <" + this_name + "> ")
+
+                        out_field[ind] = this_name
+                        out_pos[ind] = this_value_dict[each_token]
+                        out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+
+
+        assert len(out_summary.split(" ")) == len(tem_summary_list)
+
+
+        assert len(out_field) == len(tem_summary_list)
+        assert len(tem_summary_list) == len(out_pos)
+        assert len(tem_summary_list) == len(out_rpos)
+
+        # for field_tmp, pos_tmp, rpos_tmp in zip(out_field, out_pos, out_rpos):
+        #   if field_tmp == "<_PAD>":
+        #       if pos_tmp != 0:
+        #           print box_list
+        #           print out_summary
+        #           print summary.strip()
+        #           print out_field
+        #           print out_pos
+        #           print out_rpos
+        #           print "\n"
+
 
         out_s.write(" ".join(out_field) + "\n")
         out_p.write(" ".join([str(tmp) for tmp in out_pos]) + "\n")
@@ -431,7 +471,7 @@ def split_summary_for_rouge():
 
 class Vocab(object):
     """vocabulary for words and field types"""
-    def __init__(self):
+    def __init__(self, word_vocab_file, merge_field_vocab_file):
         vocab = dict()
         vocab['<_PAD>'] = 0
         vocab['<_START_TOKEN>'] = 1
@@ -439,7 +479,7 @@ class Vocab(object):
         vocab['<_UNK_TOKEN>'] = 3
         cnt = 4
         # with open(root_path + "original_data/word_vocab.txt", "r") as v:
-        with open(word_vocab, "r") as v:
+        with open(word_vocab_file, "r") as v:
             for line in v:
                 if len(line.strip().split()) > 1:
                     word = line.strip().split()[0]
@@ -459,7 +499,7 @@ class Vocab(object):
         key_map['<_UNK_TOKEN>'] = 3
         cnt = 4
         # with open(root_path + "original_data/field_vocab.txt", "r") as v:
-        with open(merge_field_vocab, "r") as v:
+        with open(merge_field_vocab_file, "r") as v:
             for line in v:
                 key = line.strip().split()[0]
                 key_map[key] = cnt
@@ -505,6 +545,21 @@ class Vocab(object):
     def id2key(self, id):
         ans = self._id2key[int(id)]
         return ans
+
+def load_local_vocab(vocab_file):
+    vocab = {}
+
+    cnt = 0
+    with open(vocab_file, "r") as v:
+        for line in v:
+            if len(line.strip().split()) > 1:
+                word = line.strip().split()[0]
+                ori_id = int(line.strip().split()[1])
+                if word not in vocab:
+                    vocab[word] = (cnt + ori_id)
+
+    return vocab
+
 
 def table2id():
     fvals = [root_path + 'processed_data/train/train.box.val',
@@ -553,7 +608,7 @@ def table2id():
 
 
 
-    vocab = Vocab()
+    vocab = Vocab(word_vocab, merge_field_vocab)
     vocab_size = vocab.vocab_size
 
     ### field not change
@@ -641,25 +696,25 @@ def table2id():
             res_sum_list = []
             res_val_list = []
 
-            for token in line_sum_list:
-                this_vocab_id = vocab.word2id(token)
-                if this_vocab_id != 3:
-                    res_sum_list.append(this_vocab_id)
-                else:
-                    if num_local_oov > extend_vocab_size:
-                        res_sum_list.append(this_vocab_id)
-                        continue
-                    ## oov
-                    # in val oov
-                    if token in line_val_list:
-                        if token not in local_oov:
-                            local_oov[token] = (vocab_size + num_local_oov)
-                            num_local_oov += 1
+            # for token in line_sum_list:
+            #     this_vocab_id = vocab.word2id(token)
+            #     if this_vocab_id != 3:
+            #         res_sum_list.append(this_vocab_id)
+            #     else:
+            #         if num_local_oov > extend_vocab_size:
+            #             res_sum_list.append(this_vocab_id)
+            #             continue
+            #         ## oov
+            #         # in val oov
+            #         if token in line_val_list:
+            #             if token not in local_oov:
+            #                 local_oov[token] = (vocab_size + num_local_oov)
+            #                 num_local_oov += 1
 
-                        res_sum_list.append(local_oov[token])
+            #             res_sum_list.append(local_oov[token])
 
-                    else:
-                        res_sum_list.append(this_vocab_id)
+            #         else:
+            #             res_sum_list.append(this_vocab_id)
 
 
             for token in line_val_list:
@@ -667,10 +722,31 @@ def table2id():
                 if this_vocab_id != 3:
                     res_val_list.append(this_vocab_id)
                 else:
+
                     if token in local_oov:
                         res_val_list.append(local_oov[token])
-                    else:
+                        continue
+
+                    if num_local_oov > extend_vocab_size:
                         res_val_list.append(this_vocab_id)
+                        continue
+
+                    local_oov[token] = (vocab_size + num_local_oov)
+                    num_local_oov += 1
+                    res_val_list.append(local_oov[token])
+
+
+            for token in line_sum_list:
+                this_vocab_id = vocab.word2id(token)
+                if this_vocab_id != 3:
+                    res_sum_list.append(this_vocab_id)
+                else:
+                    if token in local_oov:
+                        res_sum_list.append(local_oov[token])
+                    else:
+                        res_sum_list.append(this_vocab_id)
+
+
 
 
             fsumo.write(" ".join([str(tmp) for tmp in res_sum_list]) + "\n")

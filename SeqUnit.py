@@ -16,7 +16,7 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 init_word_embedding, extend_vocab_size, fieldid2word,
+                 init_word_embedding, extend_vocab_size, fieldid2word, copy_gate_penalty, use_copy_gate,
                  use_glove=True, start_token=2, stop_token=2, max_length=150):
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
@@ -55,6 +55,9 @@ class SeqUnit(object):
 
         self.use_coverage = use_coverage
         self.coverage_penalty = coverage_penalty
+
+        self.use_copy_gate = use_copy_gate
+        self.copy_gate_penalty = copy_gate_penalty
 
         self.extend_vocab_size = extend_vocab_size
         self.target_vocab_extend = self.target_vocab + self.extend_vocab_size
@@ -226,12 +229,24 @@ class SeqUnit(object):
                 self.units.update({'attention': self.att_layer})
 
 
+
+        self.copy_gate_mask = tf.cast(
+                        tf.greater(self.decoder_pos_input, tf.zeros_like(self.decoder_pos_input)), tf.float32)
+        self.copy_gate_mask = tf.concat([self.copy_gate_mask, tf.zeros([tf.shape(self.encoder_input)[0], 1], tf.float32)], 1)
+
+
         # decoder for training
-        de_outputs, de_state, self.de_conv_loss = self.decoder_t(en_state, self.decoder_embed, self.decoder_len)
+        de_outputs, de_state, self.de_conv_loss, self.copy_gate = self.decoder_t(en_state, self.decoder_embed, self.decoder_len)
         # decoder for testing
         self.g_tokens, self.atts = self.decoder_g(en_state)
         # self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size)
         
+
+        ### copy gate loss
+        # self.copy_gate_loss = tf.multiply(self.copy_gate_mask, self.copy_gate)
+
+        self.copy_gate_loss = self.copy_gate
+
 
         self.decoder_output_one_hot = tf.one_hot(indices=self.decoder_output, 
                                                 depth=self.target_vocab_extend,
@@ -248,6 +263,12 @@ class SeqUnit(object):
         self.mean_loss = tf.reduce_sum(losses)
 
         self.de_conv_loss *= self.coverage_penalty
+
+        self.copy_gate_loss = self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_loss)
+
+        if self.use_copy_gate:
+            self.mean_loss += self.copy_gate_loss
+
         if self.use_coverage:
             self.mean_loss += self.de_conv_loss
 
@@ -339,14 +360,13 @@ class SeqUnit(object):
         inputs_ta = tf.TensorArray(dtype=tf.float32, size=max_time)
         inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1,0,2]))
         emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+        emit_gate = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
         ### coverage mechanisim
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
         covloss0 = 0.0
 
-        # emit_p_gen = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
-
-        def loop_fn(t, x_t, s_t, emit_ta, coverage_att_sum, covloss, finished):
+        def loop_fn(t, x_t, s_t, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
             o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
             o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum)
             o_t = self.dec_out(o_t, finished) # batch * self.target_vocab
@@ -356,15 +376,11 @@ class SeqUnit(object):
 
             ### o_weight = batch * len, already normalized. p_gen = batch * 1
             out_dist = p_gen * tf.nn.softmax(o_t) # batch * self.target_vocab
-            att_dist = (1 - p_gen) * o_weight # batch * len
+            # att_dist = (1 - p_gen) * o_weight # batch * len
+            att_dist = o_weight
 
             extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.float32)
             out_dist = tf.concat(values=[out_dist, extend_zeros], axis=1)
-
-            ### coverage
-            this_covloss = tf.reduce_sum(tf.minimum(coverage_att_sum, o_weight))
-            covloss += this_covloss
-            coverage_att_sum += o_weight
 
             batch_nums = tf.range(0, limit=batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1)
@@ -373,22 +389,44 @@ class SeqUnit(object):
             shape = [batch_size, self.target_vocab_extend]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape)
 
-            final_dists = out_dist + attn_dists_projected
+            # final_dists = out_dist + attn_dists_projected
+            final_dists = out_dist + (1 - p_gen) * attn_dists_projected
+
+            ### copy gate mask: if target is in source, only use att dist
+            batch_nums_time = tf.range(0, limit=batch_size)
+            time_batch = tf.fill([batch_size], t)
+            mask_ind = tf.stack([batch_nums_time, time_batch], axis=1)
+            copy_mask = tf.gather_nd(self.copy_gate_mask, mask_ind)
+
+            final_dists = tf.where(tf.cast(copy_mask, tf.bool), attn_dists_projected, final_dists)
+
+            ### for gate loss
+            # emit_gate = emit_gate.write(t, tf.sigmoid(p_gen))
+            emit_gate = emit_gate.write(t, tf.multiply(p_gen, copy_mask))
+
             emit_ta = emit_ta.write(t, final_dists)
+
+
+
+            ### coverage. for all vocab
+            this_covloss = tf.reduce_sum(tf.minimum(coverage_att_sum, o_weight))
+            covloss += this_covloss
+            coverage_att_sum += o_weight
 
 
             finished = tf.greater_equal(t, inputs_len)
             x_nt = tf.cond(tf.reduce_all(finished), lambda: tf.zeros([batch_size, self.dec_input_size], dtype=tf.float32),
                                      lambda: inputs_ta.read(t))
-            return t+1, x_nt, s_nt, emit_ta, coverage_att_sum, covloss, finished
+            return t+1, x_nt, s_nt, emit_ta, emit_gate, coverage_att_sum, covloss, finished
 
-        _, _, state, emit_ta, coverage_att_sum, emit_covloss, _ = tf.while_loop(
-            cond=lambda _1, _2, _3, _4, _5, _6, finished: tf.logical_not(tf.reduce_all(finished)),
+        _, _, state, emit_ta, emit_gate, coverage_att_sum, emit_covloss, _ = tf.while_loop(
+            cond=lambda _1, _2, _3, _4, _5, _6, _7, finished: tf.logical_not(tf.reduce_all(finished)),
             body=loop_fn,
-            loop_vars=(time, x0, h0, emit_ta, coverage_att_sum, covloss0, f0))
+            loop_vars=(time, x0, h0, emit_ta, emit_gate, coverage_att_sum, covloss0, f0))
 
         outputs = tf.transpose(emit_ta.stack(), [1,0,2])
-        return outputs, state, emit_covloss
+        outputs_gate = tf.squeeze(tf.transpose(emit_gate.stack(), [1,0,2]))
+        return outputs, state, emit_covloss, outputs_gate
 
     def decoder_g(self, initial_state):
         batch_size = tf.shape(self.encoder_input)[0]
@@ -408,10 +446,12 @@ class SeqUnit(object):
         emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
         att_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
+        emit_ta_test = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+
         ### coverage mechanisim
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
 
-        def loop_fn(t, x_t, s_t, emit_ta, att_ta, coverage_att_sum, finished):
+        def loop_fn(t, x_t, s_t, emit_ta, att_ta, coverage_att_sum, emit_ta_test, finished):
             o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
             o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum)
             o_t = self.dec_out(o_t, finished)
@@ -427,9 +467,6 @@ class SeqUnit(object):
             extend_zeros = tf.zeros([batch_size, self.extend_vocab_size], dtype=tf.float32)
             out_dist = tf.concat(values=[out_dist, extend_zeros], axis=1)
 
-            ### coverage
-            coverage_att_sum += o_weight
-
             batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
             batch_nums = tf.tile(batch_nums, [1, encoder_len]) # shape (batch_size, enc_len)
@@ -438,6 +475,10 @@ class SeqUnit(object):
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape) # batch * target_vocab
 
             final_dists = out_dist + attn_dists_projected
+
+
+            ### coverage
+            coverage_att_sum += o_weight
 
 
             emit_ta = emit_ta.write(t, final_dists)
@@ -463,9 +504,13 @@ class SeqUnit(object):
 
             # x_nt = tf.concat([x_nt_word, this_dec_field_emb, this_dec_pos_emb, this_dec_rpos_emb], 1)
 
+
             ### concat with field + pos + rpos
-            vocab_max = tf.fill([batch_size], self.source_vocab - 1)
-            mask = tf.cast(tf.greater(next_token, vocab_max), tf.int32)
+            # vocab_max = tf.fill([batch_size], self.source_vocab - 1)
+            # mask = tf.cast(tf.greater(next_token, vocab_max), tf.int32)
+
+            next_token_att = tf.cast(tf.arg_max(attn_dists_projected, 1), tf.int32)
+            mask = tf.cast(tf.equal(next_token, next_token_att), tf.int32)
 
             att_pos = tf.cast(tf.arg_max(att_dist, 1), tf.int32)
             batch_num = tf.range(0, limit=batch_size)
@@ -474,6 +519,7 @@ class SeqUnit(object):
             this_dec_pos_id = tf.gather_nd(self.encoder_pos, this_dec_indices)
             this_dec_rpos_id = tf.gather_nd(self.encoder_rpos, this_dec_indices)
 
+            ### mask non-copy ones or not
             this_dec_field_id = tf.multiply(this_dec_field_id, mask)
             this_dec_pos_id = tf.multiply(this_dec_pos_id, mask)
             this_dec_rpos_id = tf.multiply(this_dec_rpos_id, mask)
@@ -493,12 +539,12 @@ class SeqUnit(object):
 
             finished = tf.logical_or(finished, tf.equal(next_token, self.stop_token))
             finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
-            return t+1, x_nt, s_nt, emit_ta, att_ta, coverage_att_sum, finished
+            return t+1, x_nt, s_nt, emit_ta, att_ta, coverage_att_sum, emit_ta_test, finished
 
-        _, _, state, emit_ta, att_ta, _, _ = tf.while_loop(
-            cond=lambda _1, _2, _3, _4, _5, _6, finished: tf.logical_not(tf.reduce_all(finished)),
+        _, _, state, emit_ta, att_ta, _, emit_ta_test, _ = tf.while_loop(
+            cond=lambda _1, _2, _3, _4, _5, _6, _7, finished: tf.logical_not(tf.reduce_all(finished)),
             body=loop_fn,
-            loop_vars=(time, x0, h0, emit_ta, att_ta, coverage_att_sum, f0))
+            loop_vars=(time, x0, h0, emit_ta, att_ta, coverage_att_sum, emit_ta_test, f0))
 
         outputs = tf.transpose(emit_ta.stack(), [1,0,2])
         pred_tokens = tf.arg_max(outputs, 2)
@@ -638,15 +684,15 @@ class SeqUnit(object):
         return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
     def __call__(self, x, sess):
-        
-        loss,  _, cov_loss = sess.run([self.mean_loss, self.train_op, self.de_conv_loss],
-                           {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
-                            self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
-                            self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                            self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
-                            self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
-                            self.decoder_rpos_input: x['dec_rpos']})
-        return loss, cov_loss
+
+        loss,  _, cov_loss, copy_gate_loss = sess.run([self.mean_loss, self.train_op, self.de_conv_loss, self.copy_gate_loss],
+                                                       {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
+                                                        self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
+                                                        self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
+                                                        self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+                                                        self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+                                                        self.decoder_rpos_input: x['dec_rpos']})
+        return loss, cov_loss, copy_gate_loss
 
     def generate(self, x, sess):
         predictions, atts = sess.run([self.g_tokens, self.atts],

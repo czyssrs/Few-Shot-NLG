@@ -2,6 +2,7 @@ import sys
 import os
 import operator
 from nltk.translate.bleu_score import sentence_bleu
+from nltk.corpus import stopwords
 import json
 import zipfile
 import string
@@ -220,6 +221,39 @@ def add_vocab(origianl_vocab, add_vocab, out_vocab):
 	print "All: ", len(word_vocab)
 
 
+def add_vocab_freq(origianl_vocab, add_vocab, out_vocab):
+	'''
+	extend vocab. exclude numbers
+	'''
+
+	word_vocab = {}
+
+	with open(origianl_vocab) as f:
+		for line in f:
+			line_list = line.strip().split("\t")
+			word = line_list[0]
+			if not word.isdigit():
+				if len(line_list) > 1:
+					word_vocab[word] = int(line_list[1])
+
+	with open(add_vocab) as f:
+		for line in f:
+			line_list = line.strip().split("\t")
+			word = line_list[0]
+			if not word.isdigit():
+				if line_list[0] != "" and line_list[0] not in word_vocab:
+					word_vocab[line_list[0]] = -1
+
+
+	ind = 0
+	with open(out_vocab, "w") as f:
+		for tmp in word_vocab:
+			f.write(tmp + "\t" + str(ind) + "\n")
+			ind += 1
+
+	print "All: ", len(word_vocab)
+
+
 
 
 def create_ori_vocab(in_box, in_summary, word_vocab_file, field_vocab_file, size):
@@ -365,6 +399,19 @@ def load_vocab(vocab_file):
 
 	return vocab
 
+def load_local_vocab(vocab_file):
+	vocab = {}
+
+	cnt = 0
+	with open(vocab_file, "r") as v:
+		for line in v:
+			if len(line.strip().split()) > 1:
+				word = line.strip().split()[0]
+				ori_id = int(line.strip().split()[1])
+				if word not in vocab:
+					vocab[word] = (cnt + ori_id)
+
+	return vocab
 
 def check_in_vocab(check_vocab, word_to_check):
 	'''
@@ -687,11 +734,11 @@ def gen_mask(in_summary, in_box, out_summary, out_box, out_join):
 
 
 
-		# print box_list
-		# print box_field_list
-		# print out_summary
-		# print summary
-		# print "\n"
+		print box_list
+		print box_field_list
+		print out_summary
+		print summary
+		print "\n"
 
 		out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
 		out_s.write(out_summary + "\n")
@@ -709,13 +756,17 @@ def gen_mask(in_summary, in_box, out_summary, out_box, out_join):
 
 
 
-def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
+def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos, processed_summary, out_test):
 	'''
 	replace special token with unk
 	'''
 
 	### load nationality demonyms.csv
 	dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
+
+	data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
+	sw = stopwords.words("english")
+	freq_vocab = load_local_vocab(data_path + "human_books_songs_films_word_vocab_500.txt")
 
 
 	with open(in_box) as f:
@@ -724,11 +775,16 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 	with open(in_summary) as f:
 		lines_summary = f.readlines()
 
+	with open(processed_summary) as f:
+		lines_pro_summary = f.readlines()
+
 	out_s = open(out_field, "w")
 	out_p = open(out_pos, "w")
 	out_rp = open(out_rpos, "w")
 
-	for box, summary in zip (lines_box, lines_summary):
+	out_t = open(out_test, "w")
+
+	for box, summary, pro_summary in zip (lines_box, lines_summary, lines_pro_summary):
 
 		box_list = box.strip().split("\t")
 		box_out_list, box_field_list = join_box(box_list)
@@ -751,7 +807,8 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 
 			this_value_dict = {}
 			for ind, each_token in enumerate(this_value.split(" ")):
-				this_value_dict[each_token] = ind + 1
+				if each_token not in this_value_dict:
+					this_value_dict[each_token] = ind + 1
 
 			this_value_list_len = len(this_value.split(" "))
 
@@ -813,7 +870,6 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 						out_pos[ind] = this_value_dict[ori_token]
 						out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
 
-
 		# print box_list
 		# print out_summary
 		# print summary.strip()
@@ -822,13 +878,54 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 		# print out_rpos
 		# print "\n"
 
+		### second fuzzy match. by individual word
+		for (this_name, this_value) in box_field_list:
+
+			this_value_dict = {}
+			for ind, each_token in enumerate(this_value.split(" ")):
+				if each_token not in this_value_dict:
+					this_value_dict[each_token] = ind + 1
+
+			this_value_list_len = len(this_value.split(" "))
+			this_value_list = this_value.split(" ")
+
+			for ind, each_token in enumerate(out_summary.split(" ")):
+				if (each_token not in sw) and each_token not in string.punctuation:
+					if each_token in this_value_dict:
+						out_summary.replace(" " + each_token + " ", " <" + this_name + "> ")
+
+						out_field[ind] = this_name
+						out_pos[ind] = this_value_dict[each_token]
+						out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+
+
+		assert len(out_summary.split(" ")) == len(tem_summary_list)
+
+
+
+
+
+		print box_list
+		print out_summary
+		print summary.strip()
+		print out_field
+		print out_pos
+		print out_rpos
+		print "\n"
+
 		# out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
 		# out_s.write(out_summary + "\n")
 
-		# out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
-		# out_t.write(summary.strip() + "\n")
-		# out_t.write(out_summary + "\n")
-		# out_t.write("\n")
+		out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+		out_t.write("\n")
+		out_t.write(summary.strip() + "\n")
+		out_t.write("\n")
+		out_t.write(out_summary + "\n")
+		out_t.write("\n")
+		out_t.write(pro_summary)
+		out_t.write("\n")
+
+		out_t.write("#########################\n")
 
 		# print out_field
 		# print len(out_field)
@@ -839,10 +936,22 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 		assert len(tem_summary_list) == len(out_pos)
 		assert len(tem_summary_list) == len(out_rpos)
 
+		# for field_tmp, pos_tmp, rpos_tmp in zip(out_field, out_pos, out_rpos):
+		# 	if field_tmp == "<_PAD>":
+		# 		if pos_tmp != 0:
+		# 			print box_list
+		# 			print out_summary
+		# 			print summary.strip()
+		# 			print out_field
+		# 			print out_pos
+		# 			print out_rpos
+		# 			print "\n"
+
 
 		out_s.write(" ".join(out_field) + "\n")
 		out_p.write(" ".join([str(tmp) for tmp in out_pos]) + "\n")
 		out_rp.write(" ".join([str(tmp) for tmp in out_rpos]) + "\n")
+
 
 
 
@@ -877,18 +986,21 @@ if __name__=='__main__':
 
 
 	# ### generate mask
-	# in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/test.summary"
-	# in_box = "/scratch/home/zhiyu/wiki2bio/original_data/test.box"
-	# out_field = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test.field"
-	# out_pos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test.pos"
-	# out_rpos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test.rpos"
+	# in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/valid.summary"
+	# in_box = "/scratch/home/zhiyu/wiki2bio/original_data/valid.box"
+	# out_field = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.field"
+	# out_pos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.pos"
+	# out_rpos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.rpos"
 
-	# gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos)
+	# processed_summary = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/valid/valid.summary.id"
+	# test_case = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_valid_case.txt"
+
+	# gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos, processed_summary, test_case)
 
 
-	dec_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/train/train.summary.id"
-	summary_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_data/train.summary"
-	dec_checker(summary_in, dec_in)
+	# dec_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/train/train.summary.id"
+	# summary_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_data/train.summary"
+	# dec_checker(summary_in, dec_in)
 
 	# herbert <article_title> , jr. -lrb- born april 21 , 1945 in <birth_place> -rrb- is a former american football player .
 
@@ -933,7 +1045,7 @@ if __name__=='__main__':
 	#merge_value_field_vocab("/scratch/home/zhiyu/wiki2bio/original_data/")
 
 
-	# data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
+	data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
 
 	# # domain = "books"
 	# # in_box = data_path + domain + ".box"
@@ -969,6 +1081,19 @@ if __name__=='__main__':
 	# add_vocab(ori_field_vocab, books_field_vocab, final_field_vocab)
 	# add_vocab(final_field_vocab, songs_field_vocab, final_field_vocab)
 	# add_vocab(final_field_vocab, films_field_vocab, final_field_vocab)
+
+
+	ori_vocab = data_path + "word_vocab_200.txt"
+
+	books_all_vocab = data_path + "books_word_vocab_200.txt"
+	songs_all_vocab = data_path + "songs_word_vocab_200.txt"
+	films_all_vocab = data_path + "films_word_vocab_200.txt"
+
+	final_vocab = data_path + "human_books_songs_films_word_vocab_200.txt"
+
+	add_vocab_freq(ori_vocab, books_all_vocab, final_vocab)
+	add_vocab_freq(final_vocab, songs_all_vocab, final_vocab)
+	add_vocab_freq(final_vocab, films_all_vocab, final_vocab)
 
 
 	# file_in = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
