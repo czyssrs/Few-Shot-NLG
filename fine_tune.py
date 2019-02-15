@@ -18,32 +18,32 @@ from util import *
 
 
 ### data
-tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data_books','data set directory')
-tf.app.flags.DEFINE_integer("fine_tune_size", 10, "number of fine tune examples")
+tf.app.flags.DEFINE_string("dir",'/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/processed_data_books','data set directory')
+tf.app.flags.DEFINE_integer("fine_tune_size", 100, "number of fine tune examples")
+tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
+tf.app.flags.DEFINE_integer("report", 5,'report valid results after some steps')
+tf.app.flags.DEFINE_string("load",'52','load directory') # BBBBBESTOFAll
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
 tf.app.flags.DEFINE_integer("emb_size", 300, "Size of embedding.")
 tf.app.flags.DEFINE_integer("field_size", 300, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
-tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
-tf.app.flags.DEFINE_integer("epoch", 10, "Number of training epoch.")
+tf.app.flags.DEFINE_integer("epoch", 50, "Number of training epoch.")
 tf.app.flags.DEFINE_integer("source_vocab", 5420,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2759,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 5420,'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 1,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
 tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
 tf.app.flags.DEFINE_float("coverage_penalty", 1.0,'coverage loss penalty')
 
 tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
-tf.app.flags.DEFINE_float("copy_gate_penalty", 10.0,'copy gate loss penalty')
+tf.app.flags.DEFINE_float("copy_gate_penalty", 0.1,'copy gate loss penalty')
 
 tf.app.flags.DEFINE_integer("extend_vocab_size", 200,'extended vocabulary size for oov')
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
-tf.app.flags.DEFINE_string("load",'6','load directory') # BBBBBESTOFAll
 tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
 
 
@@ -69,9 +69,9 @@ domain = sys.argv[2]
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
 
-root_path = "../emb_baseline_pointer/"
+root_path = "../emb_pointer_copyloss_am/"
 gold_path_valid = root_path + 'original_data/valid.summary'
-gold_path_test = root_path + 'other_domain_data/books/test_fine_tune_10/test.summary'
+gold_path_test = root_path + 'other_domain_data/books/original_data/test.summary'
 
 field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
 vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
@@ -134,7 +134,8 @@ def train(sess, dataloader, model):
     record_copy_loss = 0.0
 
     for _ in range(FLAGS.epoch):
-        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.fine_tune_size, True):
+        # for x in dataloader.batch_iter(trainset, oov_list, FLAGS.fine_tune_size, True):
+        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.batch_size, True):
             this_loss, this_covloss, this_copy_gate_loss = model(x, sess)
             loss += this_loss
             record_loss += this_loss
@@ -150,11 +151,15 @@ def train(sess, dataloader, model):
             record_cov_loss = 0.0
             record_copy_loss = 0.0
 
-            # if (k % FLAGS.report == 0):
-            #     print "Round: ", k / FLAGS.report
-            #     cost_time = time.time() - start_time
-            #     write_log("%d : loss = %.3f, time = %.3f " % (k // FLAGS.report, loss, cost_time))
-            #     loss, start_time = 0.0, time.time()
+            if (k % FLAGS.report == 0):
+                print "Round: ", k / FLAGS.report
+                cost_time = time.time() - start_time
+                write_log("%d : loss = %.3f, time = %.3f " % (k // FLAGS.report, loss, cost_time))
+                loss, start_time = 0.0, time.time()
+
+                ksave_dir = save_model(model, save_dir, k // FLAGS.report)
+                # write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
+                write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
 
     ksave_dir = save_model(model, save_dir, k // FLAGS.report)
     write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
@@ -335,6 +340,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
                 k += 1
                 idx += 1
 
+    print len(pred_list)
     # write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
     write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
     write_word(pred_list, ksave_dir, mode + "_summary_copy.clean.txt")
@@ -384,7 +390,8 @@ def main():
 
         sess.run(tf.global_variables_initializer())
 
-        # model.load(base_model_dir)
+        model.load(base_model_dir)
+        print "model loaded."
 
         if FLAGS.mode == 'train':
             train(sess, dataloader, model)

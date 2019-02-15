@@ -16,7 +16,7 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 init_word_embedding, extend_vocab_size, fieldid2word, copy_gate_penalty, use_copy_gate,
+                 init_word_embedding, extend_vocab_size, fieldid2word, copy_gate_penalty, use_copy_gate, rnet_penalty, 
                  use_glove=True, start_token=2, stop_token=2, max_length=150):
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
@@ -59,6 +59,8 @@ class SeqUnit(object):
         self.use_copy_gate = use_copy_gate
         self.copy_gate_penalty = copy_gate_penalty
 
+        self.rnet_penalty = rnet_penalty
+
         self.extend_vocab_size = extend_vocab_size
         self.target_vocab_extend = self.target_vocab + self.extend_vocab_size
         self.dec_input_size = emb_size + field_size + 2 * pos_size
@@ -84,6 +86,9 @@ class SeqUnit(object):
         self.decoder_pos_input = tf.placeholder(tf.int32, [None, None])
         self.decoder_rpos_input = tf.placeholder(tf.int32, [None, None])
 
+        ### for AM
+        self.domain_id = tf.placeholder(tf.int32, [None])
+
 
         with tf.variable_scope(scope_name):
             if self.fgate_enc:
@@ -96,8 +101,11 @@ class SeqUnit(object):
             self.dec_lstm = LstmUnit(self.hidden_size, self.dec_input_size, 'decoder_lstm')
             self.dec_out = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
 
+            # recognition net
+            self.rnet_lstm = fgateLstmUnit(self.hidden_size, self.uni_size, self.field_encoder_size, 'rnet')
+
         self.units.update({'encoder_lstm': self.enc_lstm,'decoder_lstm': self.dec_lstm,
-                           'decoder_output': self.dec_out})
+                           'decoder_output': self.dec_out, 'rnet': self.rnet_lstm})
 
         # ======================================== embeddings ======================================== #
         #with tf.device('/cpu:0'):
@@ -120,6 +128,7 @@ class SeqUnit(object):
 
             self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
             self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
+            self.decoder_embed_rnet = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
 
             if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
                 # self.fembedding = tf.get_variable('fembedding', [self.field_vocab, self.field_size])
@@ -154,46 +163,30 @@ class SeqUnit(object):
             self.decoder_embed = tf.concat([self.decoder_embed, self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
 
 
-            # ### field + pos + rpos for vocab for each input
-            # batch_size = tf.shape(self.encoder_input)[0]
-            # encoder_len = tf.shape(self.encoder_input)[1]
-            # decoder_len = tf.shape(self.decoder_input)[1]
-            # shape = [batch_size, self.target_vocab_extend]
+            ### domain embedding. encoder length plus 1
+            batch_size = tf.shape(self.encoder_input)[0]
+            self.domain_embedding = tf.get_variable('domain_embedding', [4, self.emb_size]) ### humans, books, songs, films
+            self.domain_embed = tf.nn.embedding_lookup(self.domain_embedding, self.domain_id)
+            self.domain_embed = tf.expand_dims(self.domain_embed, 1)
+            self.encoder_embed = tf.concat([self.domain_embed, self.encoder_embed], 1) # emc_len + 1
+            field_pos_embed_size = tf.shape(self.field_pos_embed)[2]
+            field_pos_embed_zeros = tf.zeros([batch_size, 1, field_pos_embed_size])
+            self.field_pos_embed = tf.concat([field_pos_embed_zeros, self.field_pos_embed], 1) # emc_len + 1
 
-            # batch_nums = tf.range(0, limit=batch_size)
-            # batch_nums = tf.expand_dims(batch_nums, 1)
-            # batch_nums_enc = tf.tile(batch_nums, [1, encoder_len])
-            # batch_nums_dec = tf.tile(batch_nums, [1, decoder_len])
+            ### pad 0 to encoder input
+            self.encoder_input_domain = tf.concat([tf.zeros([batch_size, 1], dtype=tf.int32), self.encoder_input], 1)
+            self.encoder_len_domain = tf.add(self.encoder_len, tf.ones_like(self.encoder_len, dtype=tf.int32))
+            self.encoder_field_domain = tf.concat([tf.zeros([batch_size, 1], dtype=tf.int32), self.encoder_field], 1)
+            self.encoder_pos_domain = tf.concat([tf.zeros([batch_size, 1], dtype=tf.int32), self.encoder_pos], 1)
+            self.encoder_rpos_domain = tf.concat([tf.zeros([batch_size, 1], dtype=tf.int32), self.encoder_rpos], 1)
 
-            # indices = tf.stack((batch_nums_enc, self.encoder_input), axis=2) # batch_size * enc_len * 2
+            ### decoder input for R net. also plus 1 for domain embed
+            self.field_pos_embed_dec = tf.concat([self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
+            self.field_pos_embed_dec = tf.concat([field_pos_embed_zeros, self.field_pos_embed_dec], 1)
+            self.decoder_embed_rnet = tf.concat([self.domain_embed, self.decoder_embed_rnet], 1)
+            self.decoder_len_rnet = tf.add(self.decoder_len, tf.ones_like(self.decoder_len, dtype=tf.int32))
 
-            # # field
-            # self.vocab_field_ids = tf.scatter_nd(indices, self.encoder_field, shape) # batch * target_vocab_extend
-            # # pos
-            # self.vocab_pos = tf.scatter_nd(indices, self.encoder_pos, shape) # batch * target_vocab_extend
-            # # rpos 
-            # self.vocab_rpos = tf.scatter_nd(indices, self.encoder_rpos, shape) # batch * target_vocab_extend
-
-            # self.test = tf.Print(self.vocab_field_ids, [self.vocab_field_ids], summarize=1000)
-
-            # ### decoder add field + pos + rpos
-            # indices_dec = tf.stack((batch_nums_dec, self.decoder_input), axis=2) # batch_size * dec_len * 2
-            # # field
-            # self.decoder_field_id = tf.gather_nd(self.vocab_field_ids, indices_dec) # batch_size * dec_len
-            # self.decoder_field_id = tf.zeros([batch_size, decoder_len], dtype=tf.int32)
-            # self.decoder_field_word = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_id)
-            # self.decoder_field_emb = tf.reduce_mean(
-            #                             tf.nn.embedding_lookup(self.embedding, self.decoder_field_word), 2) # batch_size * dec_len * field_emb_size
-
-            # # pos
-            # self.decoder_pos_id = tf.gather_nd(self.vocab_pos, indices_dec)
-            # self.decoder_pos_emb = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_id)
-            # # rpos
-            # self.decoder_rpos_id = tf.gather_nd(self.vocab_rpos, indices_dec)
-            # self.decoder_rpos_emb = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_id)
-
-
-            # self.decoder_embed = tf.concat([self.decoder_embed, self.decoder_field_emb, self.decoder_pos_emb, self.decoder_rpos_emb], 2)
+            self.max_time_rnet = tf.maximum(tf.shape(self.encoder_embed)[1], tf.shape(self.decoder_embed_rnet)[1])
 
 
 
@@ -204,14 +197,29 @@ class SeqUnit(object):
             self.params.update({'pembedding': self.pembedding})
             self.params.update({'rembedding': self.rembedding})
         self.params.update({'embedding': self.embedding})
+        self.params.update({'domain_embedding': self.domain_embedding})
 
         # ======================================== encoder ======================================== #
         if self.fgate_enc:
             print 'field gated encoder used'
-            en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed, self.encoder_len)
+            en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed, self.encoder_len_domain) # plus domain embedding
         else:
             print 'normal encoder used'
-            en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len)
+            en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len_domain)
+
+
+        # ======================================== R net ======================================== #
+
+        print 'Recognition net'
+        en_outputs_f, en_state_f = self.rnet(self.encoder_embed, self.field_pos_embed, self.encoder_len_domain) # R(f, d)
+        en_outputs_x, en_state_x = self.rnet(self.decoder_embed_rnet, self.field_pos_embed_dec, self.decoder_len_rnet) # R(x, d)
+
+
+        # debug
+        # self.test1 = tf.Print(self.encoder_embed, [tf.shape(self.encoder_embed)], message="self.encoder_embed", summarize=100, name="self.encoder_embed")
+        # self.test2 = tf.Print(self.encoder_len_domain, [self.encoder_len_domain], summarize=100, message="self.encoder_len", name="self.encoder_len")
+        # self.test3 = tf.Print(self.field_pos_embed, [tf.shape(self.field_pos_embed)], message="field_pos", summarize=100, name="field_pos")
+
         # ======================================== decoder ======================================== #
 
         if self.dual_att:
@@ -222,11 +230,18 @@ class SeqUnit(object):
                 self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size,
                                                         en_outputs, self.field_pos_embed, "attention")
                 self.units.update({'attention': self.att_layer})
+
+                ### for rnet
+                self.att_layer_rnet = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size,
+                                                        en_outputs_f, self.field_pos_embed, "attention_rnet")
+                self.units.update({'attention_rnet': self.att_layer_rnet})
         else:
             print "normal attention used"
             with tf.variable_scope(scope_name):
                 self.att_layer = AttentionWrapper(self.hidden_size, self.hidden_size, en_outputs, "attention")
                 self.units.update({'attention': self.att_layer})
+                self.att_layer_rnet = AttentionWrapper(self.hidden_size, self.hidden_size, en_outputs_f, "attention_rnet")
+                self.units.update({'attention_rnet': self.att_layer_rnet})
 
 
 
@@ -236,35 +251,45 @@ class SeqUnit(object):
 
 
         # decoder for training
-        de_outputs, de_state, self.de_conv_loss, self.copy_gate = self.decoder_t(en_state, self.decoder_embed, self.decoder_len)
+        de_outputs, de_state, self.de_conv_loss, self.copy_gate_loss = self.decoder_t(en_state, self.decoder_embed, self.decoder_len, 0)
         # decoder for testing
         self.g_tokens, self.atts = self.decoder_g(en_state)
         # self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size)
+
+        ### decode for R net
+        de_outputs_rnet, de_state_rnet, self.de_conv_loss_rnet, self.copy_gate_rnet = self.decoder_t(en_state_f, self.decoder_embed, self.decoder_len, 1)
         
 
-        ### copy gate loss
-        # self.copy_gate_loss = tf.multiply(self.copy_gate_mask, self.copy_gate)
+        # ======================================== losses ======================================== #
 
-        self.copy_gate_loss = self.copy_gate
-
-
+        ### loss for R net
         self.decoder_output_one_hot = tf.one_hot(indices=self.decoder_output, 
                                                 depth=self.target_vocab_extend,
                                                 axis=-1)
-
-        ### original loss with logits
-        #losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=de_outputs, labels=self.decoder_output)
-
-        losses = -tf.reduce_sum(self.decoder_output_one_hot * tf.log(de_outputs + 1e-6), 2)
-
         mask = tf.sign(tf.to_float(self.decoder_output))
+
+        self.loss_rnet = -tf.reduce_sum(self.decoder_output_one_hot * tf.log(de_outputs_rnet + 1e-6), 2)
+        self.loss_rnet *= mask
+        self.loss_rnet = tf.reduce_sum(self.loss_rnet)
+        self.copy_gate_loss_rnet = (self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_rnet))
+        if self.use_copy_gate:
+            self.loss_rnet += self.copy_gate_loss_rnet
+        self.loss_f_mse = tf.losses.mean_squared_error(en_state_f, en_state_x)
+        self.loss_f_mse *= self.rnet_penalty
+        self.loss_rnet += self.loss_f_mse
+
+
+
+        ### enc-dec loss
+        losses = -tf.reduce_sum(self.decoder_output_one_hot * tf.log(de_outputs + 1e-6), 2)
         losses = mask * losses
+
         ### faster. original reduce mean
         self.mean_loss = tf.reduce_sum(losses)
 
         self.de_conv_loss *= self.coverage_penalty
 
-        self.copy_gate_loss = self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_loss)
+        self.copy_gate_loss = (self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_loss))
 
         if self.use_copy_gate:
             self.mean_loss += self.copy_gate_loss
@@ -272,10 +297,25 @@ class SeqUnit(object):
         if self.use_coverage:
             self.mean_loss += self.de_conv_loss
 
+        self.loss_F_mse = tf.losses.mean_squared_error(en_state, en_state_x)
+        self.loss_F_mse *= self.rnet_penalty
+        self.mean_loss += self.loss_F_mse
+
+
         tvars = tf.trainable_variables()
+
+
+        ### train enc-dec
         grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, tvars), self.grad_clip)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         self.train_op = optimizer.apply_gradients(zip(grads, tvars))
+
+        ### train R net
+        grads_rnet, _ = tf.clip_by_global_norm(tf.gradients(self.loss_rnet, tvars), self.grad_clip)
+        optimizer_rnet = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        self.train_op_rnet = optimizer_rnet.apply_gradients(zip(grads_rnet, tvars))
+
+
 
     def encoder(self, inputs, inputs_len):
         batch_size = tf.shape(self.encoder_input)[0]
@@ -306,9 +346,10 @@ class SeqUnit(object):
         outputs = tf.transpose(emit_ta.stack(), [1,0,2])
         return outputs, state
 
+
     def fgate_encoder(self, inputs, fields, inputs_len):
         batch_size = tf.shape(self.encoder_input)[0]
-        max_time = tf.shape(self.encoder_input)[1]
+        max_time = tf.shape(self.encoder_embed)[1]
         hidden_size = self.hidden_size
 
         time = tf.constant(0, dtype=tf.int32)
@@ -340,11 +381,45 @@ class SeqUnit(object):
         return outputs, state
 
 
-    def decoder_t(self, initial_state, inputs, inputs_len):
+    def rnet(self, inputs, fields, inputs_len):
+        batch_size = tf.shape(self.encoder_input)[0]
+        max_time = self.max_time_rnet
+        hidden_size = self.hidden_size
+
+        time = tf.constant(0, dtype=tf.int32)
+        h0 = (tf.zeros([batch_size, hidden_size], dtype=tf.float32),
+              tf.zeros([batch_size, hidden_size], dtype=tf.float32))
+        f0 = tf.zeros([batch_size], dtype=tf.bool)
+        inputs_ta = tf.TensorArray(dtype=tf.float32, size=max_time)
+        inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1,0,2]))
+        fields_ta = tf.TensorArray(dtype=tf.float32, size=max_time)
+        fields_ta = fields_ta.unstack(tf.transpose(fields, [1,0,2]))
+        emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+
+        def loop_fn(t, x_t, d_t, s_t, emit_ta, finished):
+            o_t, s_nt = self.rnet_lstm(x_t, d_t, s_t, finished)
+            emit_ta = emit_ta.write(t, o_t)
+            finished = tf.greater_equal(t+1, inputs_len)
+            x_nt = tf.cond(tf.reduce_all(finished), lambda: tf.zeros([batch_size, self.uni_size], dtype=tf.float32),
+                                     lambda: inputs_ta.read(t+1))
+            d_nt = tf.cond(tf.reduce_all(finished), lambda: tf.zeros([batch_size, self.field_attention_size], dtype=tf.float32),
+                                     lambda: fields_ta.read(t+1))
+            return t+1, x_nt, d_nt, s_nt, emit_ta, finished
+
+        _, _, _, state, emit_ta, _ = tf.while_loop(
+            cond=lambda _1, _2, _3, _4, _5, finished: tf.logical_not(tf.reduce_all(finished)),
+            body=loop_fn,
+            loop_vars=(time, inputs_ta.read(0), fields_ta.read(0), h0, emit_ta, f0))
+
+        outputs = tf.transpose(emit_ta.stack(), [1,0,2])
+        return outputs, state
+
+
+    def decoder_t(self, initial_state, inputs, inputs_len, mode):
         ### gather p_gen and att_weights
         batch_size = tf.shape(self.decoder_input)[0]
         max_time = tf.shape(self.decoder_input)[1]
-        encoder_len = tf.shape(self.encoder_input)[1]
+        encoder_len = tf.shape(self.encoder_embed)[1]
 
         time = tf.constant(0, dtype=tf.int32)
         h0 = initial_state
@@ -368,7 +443,13 @@ class SeqUnit(object):
 
         def loop_fn(t, x_t, s_t, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
             o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
-            o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum)
+            ### enc
+            if mode == 0:
+                o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum)
+            ### rnet
+            else:
+                o_t, o_weight, p_gen = self.att_layer_rnet(o_t, x_t, s_t, coverage_att_sum)
+
             o_t = self.dec_out(o_t, finished) # batch * self.target_vocab
 
             ### pointer generator
@@ -385,7 +466,7 @@ class SeqUnit(object):
             batch_nums = tf.range(0, limit=batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1)
             batch_nums = tf.tile(batch_nums, [1, encoder_len])
-            indices = tf.stack((batch_nums, self.encoder_input), axis=2) # batch_size * enc_len * 2
+            indices = tf.stack((batch_nums, self.encoder_input_domain), axis=2) # batch_size * enc_len * 2
             shape = [batch_size, self.target_vocab_extend]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape)
 
@@ -430,7 +511,7 @@ class SeqUnit(object):
 
     def decoder_g(self, initial_state):
         batch_size = tf.shape(self.encoder_input)[0]
-        encoder_len = tf.shape(self.encoder_input)[1]
+        encoder_len = tf.shape(self.encoder_embed)[1]
 
         time = tf.constant(0, dtype=tf.int32)
         h0 = initial_state
@@ -470,7 +551,7 @@ class SeqUnit(object):
             batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
             batch_nums = tf.tile(batch_nums, [1, encoder_len]) # shape (batch_size, enc_len)
-            indices = tf.stack((batch_nums, self.encoder_input), axis=2) # shape (batch_size, enc_len, 2)
+            indices = tf.stack((batch_nums, self.encoder_input_domain), axis=2) # shape (batch_size, enc_len, 2)
             shape = [batch_size, self.target_vocab_extend]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape) # batch * target_vocab
 
@@ -488,23 +569,6 @@ class SeqUnit(object):
 
 
 
-            # ### concat with field + pos + rpos
-            # batch_num = tf.range(0, limit=batch_size)
-            # this_dec_indices = tf.stack([batch_num, next_token], axis=1) # batch_size * 2
-            # this_dec_field_id = tf.gather_nd(self.vocab_field_ids, this_dec_indices)
-            # this_dec_pos_id = tf.gather_nd(self.vocab_pos, this_dec_indices)
-            # this_dec_rpos_id = tf.gather_nd(self.vocab_rpos, this_dec_indices)
-
-            # this_dec_field_word = tf.nn.embedding_lookup(self.field_id2word, this_dec_field_id) # batch * 3
-            # this_dec_field_emb = tf.reduce_mean(
-            #                     tf.nn.embedding_lookup(self.embedding, this_dec_field_word), 1) # batch_size * field_emb_size
-
-            # this_dec_pos_emb = tf.nn.embedding_lookup(self.pembedding, this_dec_pos_id)
-            # this_dec_rpos_emb = tf.nn.embedding_lookup(self.rembedding, this_dec_rpos_id)
-
-            # x_nt = tf.concat([x_nt_word, this_dec_field_emb, this_dec_pos_emb, this_dec_rpos_emb], 1)
-
-
             ### concat with field + pos + rpos
             # vocab_max = tf.fill([batch_size], self.source_vocab - 1)
             # mask = tf.cast(tf.greater(next_token, vocab_max), tf.int32)
@@ -515,14 +579,14 @@ class SeqUnit(object):
             att_pos = tf.cast(tf.arg_max(att_dist, 1), tf.int32)
             batch_num = tf.range(0, limit=batch_size)
             this_dec_indices = tf.stack([batch_num, att_pos], axis=1) # batch_size * 2
-            this_dec_field_id = tf.gather_nd(self.encoder_field, this_dec_indices)
-            this_dec_pos_id = tf.gather_nd(self.encoder_pos, this_dec_indices)
-            this_dec_rpos_id = tf.gather_nd(self.encoder_rpos, this_dec_indices)
+            this_dec_field_id = tf.gather_nd(self.encoder_field_domain, this_dec_indices)
+            this_dec_pos_id = tf.gather_nd(self.encoder_pos_domain, this_dec_indices)
+            this_dec_rpos_id = tf.gather_nd(self.encoder_rpos_domain, this_dec_indices)
 
             ### mask non-copy ones or not
-            this_dec_field_id = tf.multiply(this_dec_field_id, mask)
-            this_dec_pos_id = tf.multiply(this_dec_pos_id, mask)
-            this_dec_rpos_id = tf.multiply(this_dec_rpos_id, mask)
+            # this_dec_field_id = tf.multiply(this_dec_field_id, mask)
+            # this_dec_pos_id = tf.multiply(this_dec_pos_id, mask)
+            # this_dec_rpos_id = tf.multiply(this_dec_rpos_id, mask)
 
             this_dec_field_word = tf.nn.embedding_lookup(self.field_id2word, this_dec_field_id) # batch * 3
             this_dec_field_emb = tf.reduce_mean(
@@ -683,22 +747,34 @@ class SeqUnit(object):
 
         return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
-    def __call__(self, x, sess):
+    def __call__(self, x, sess, mode):
 
-        loss,  _, cov_loss, copy_gate_loss = sess.run([self.mean_loss, self.train_op, self.de_conv_loss, self.copy_gate_loss],
-                                                       {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
-                                                        self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
-                                                        self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                                                        self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
-                                                        self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
-                                                        self.decoder_rpos_input: x['dec_rpos']})
-        return loss, cov_loss, copy_gate_loss
+        ### mode 0: train enc dec; mode 1: train rnet
+        if mode == 0:
+            loss,  _, loss_mse, copy_gate_loss = sess.run([self.mean_loss, self.train_op, self.loss_F_mse, self.copy_gate_loss],
+                                                           {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
+                                                            self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
+                                                            self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
+                                                            self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+                                                            self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+                                                            self.decoder_rpos_input: x['dec_rpos'], self.domain_id: x['domain_ind']})
+
+        else:
+            loss,  _, loss_mse, copy_gate_loss = sess.run([self.loss_rnet, self.train_op_rnet, self.loss_f_mse, self.copy_gate_loss_rnet],
+                                                           {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
+                                                            self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
+                                                            self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
+                                                            self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+                                                            self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+                                                            self.decoder_rpos_input: x['dec_rpos'], self.domain_id: x['domain_ind']})
+
+        return loss, loss_mse, copy_gate_loss
 
     def generate(self, x, sess):
         predictions, atts = sess.run([self.g_tokens, self.atts],
                                {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'], 
                                 self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
-                                self.encoder_rpos: x['enc_rpos']})
+                                self.encoder_rpos: x['enc_rpos'], self.domain_id: x['domain_ind']})
         return predictions, atts
 
     def generate_beam(self, x, sess):

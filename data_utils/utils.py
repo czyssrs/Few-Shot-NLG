@@ -7,6 +7,7 @@ import json
 import zipfile
 import string
 import Queue
+import random
 import numpy as np
 from nlgeval import NLGEval
 from nlgeval import compute_metrics
@@ -461,6 +462,9 @@ def join_box(list_in):
 		field_name = each_item.split(":")[0]
 		field_value = each_item.split(":")[1]
 
+		if field_name == "":
+			continue
+
 		if not field_name[-1].isdigit():
 			if field_value != "<none>":
 				out_list.append((field_name, field_value))
@@ -489,6 +493,8 @@ def join_box(list_in):
 		out_list.append((current_name, current_value.strip()))
 
 	sorted_by_second = sorted(out_list, key=lambda tup: len(tup[1].split(" ")), reverse=True)
+
+	random_out = random.shuffle(sorted_by_second)
 
 	return out_list, sorted_by_second
 
@@ -980,9 +986,375 @@ def dec_checker(summary_in, dec_in):
 			print str(len_sum) + "\t" + str(len_dec) + "\n"
 
 
+def get_line_oov(file_in, file_out):
+	'''
+	utilitys.
+	get number of lines with 3
+	'''
+
+	with open(file_in) as f:
+		lines = f.readlines()
+
+	without_3 = []
+
+	for ind, line in enumerate(lines):
+
+		# if "3" in line.strip().split():
+		if "3" not in line.strip().split():
+			without_3.append(ind)
+
+
+	with open(file_out, "w") as f:
+		f.write("\n".join([str(tmp) for tmp in without_3]))
+
+
+def remove_oov(folder_in, folder_out, valid_line_in):
+
+
+	with open(valid_line_in) as f:
+		valid_line = [int(tmp.strip()) for tmp in f.readlines()]
+
+	print len(valid_line)
+	print "\n"
+
+
+	for dirpath, dirnames, filenames in os.walk(folder_in):
+		for filename in filenames:
+
+			out_lines = []
+
+			with open(folder_in + filename) as f:
+				lines = [line.strip() for line in f.readlines()]
+
+
+			for valid_ind in valid_line:
+				out_lines.append(lines[valid_ind])
+
+			print len(out_lines)
+
+			with open(folder_out + filename, "w") as f_out:
+				f_out.write("\n".join(out_lines))
+
+
+
+def remove_oov_files(folder_in, folder_out, valid_line_in, filenames):
+
+
+	with open(valid_line_in) as f:
+		valid_line = [int(tmp.strip()) for tmp in f.readlines()]
+
+	print len(valid_line)
+	print "\n"
+
+
+	# for dirpath, dirnames, filenames in os.walk(folder_in):
+	for filename in filenames:
+
+		out_lines = []
+
+		with open(folder_in + filename) as f:
+			lines = [line.strip() for line in f.readlines()]
+
+
+		for valid_ind in valid_line:
+			out_lines.append(lines[valid_ind])
+
+		print len(out_lines)
+
+		with open(folder_out + filename, "w") as f_out:
+			f_out.write("\n".join(out_lines))
+
+
+####### create description for each domain
+def gen_sample_humans(in_box, in_summary, out_box, out_summary, sample_n):
+
+	## human: name + birth_date, occupation, nationality, genre?
+	# classic: name (born on ...) is a nationality occupation
+
+	num_gen = 0
+	num_birth = 0
+	num_occupation = 0
+	num_nationality = 0
+	num_genre = 0
+
+	with open(in_box) as f:
+		box_lines = f.readlines()
+
+	with open(in_summary) as f:
+		summary_lines = f.readlines()
+
+	out_b = open(out_box, "w")
+	out_s = open(out_summary, "w")
+
+
+	for line_box, line_summary in zip(box_lines, summary_lines):
+
+		if num_gen >= sample_n:
+			break
+
+		box_list = line_box.strip().split("\t")
+		box_out_list, box_field_list = join_box(box_list)
+
+		this_box_dict = {}
+		for (this_name, this_value) in box_field_list:
+			this_box_dict[this_name] = this_value
+
+		if "name" not in this_box_dict:
+			continue
+
+		this_name = this_box_dict["name"]
+
+		field_iter = ["birth_date", "occupation", "occupation", "occupation", "nationality"]
+		random.shuffle(field_iter)
+
+		for field_target in field_iter:
+
+			if field_target in this_box_dict:
+				this_field_value = this_box_dict[field_target]
+
+				###
+				if field_target == "birth_date":
+					num_birth += 1
+					if num_birth > 35:
+						continue
+					dice = random.randint(1, 10)
+					if dice < 7:
+						this_out_summary = this_name + " is born on " + this_field_value + " ."
+					else:
+						this_out_summary = this_name + " , born " + this_field_value + " ."
+
+
+				elif field_target == "occupation":
+					num_occupation += 1
+					if num_occupation > 35:
+						continue
+					this_out_summary = this_name + " is a " + this_field_value + " ."
+
+				elif field_target == "nationality":
+					num_nationality += 1
+					if num_nationality > 35:
+						continue
+					dice = random.randint(1, 10)
+					if dice < 5:
+						this_out_summary = this_name + " is from " + this_field_value + " ."
+					else:
+						this_out_summary = this_name + " is a " + this_field_value + " ."
+
+
+				# ### ?
+				# elif field_target == "genre":
+				# 	dice = random.randint(1, 10)
+				# 	if dice < 5:
+				# 		this_out_summary = this_name + " is from " + this_field_value + " ."
+				# 	else:
+				# 		this_out_summary = this_name + " is a " + this_field_value + " ."
+
+
+				this_out_box = []
+
+				if len(this_name.split(" ")) < 2:
+					this_out_box.append("name:" + this_name)
+				else:
+					for ind, token in enumerate(this_name.split(" ")):
+						this_out_box.append("name_" + str(ind + 1) + ":" + token)
+
+				if len(this_field_value.split(" ")) < 2:
+					this_out_box.append(field_target + ":" + this_field_value)
+				else:
+					for ind, token in enumerate(this_field_value.split(" ")):
+						this_out_box.append(field_target + "_" + str(ind + 1) + ":" + token)
+
+
+				out_b.write("\t".join(this_out_box) + "\n")
+				out_s.write(this_out_summary + "\n")
+
+				print this_out_box
+				print this_out_summary
+
+				num_gen += 1
+
+				break
+
+
+
+
+	out_b.close()
+	out_s.close()
+
+def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
+
+	## human: name + author, genre, publisher, publication_date, country
+	# classic: name is a country genre novel by author, published by publisher on publication_date
+
+	num_gen = 0
+	num_1 = 0
+	num_2 = 0
+	num_3 = 0
+	num_4 = 0
+	num_5 = 0
+
+	with open(in_box) as f:
+		box_lines = f.readlines()
+
+	with open(in_summary) as f:
+		summary_lines = f.readlines()
+
+	out_b = open(out_box, "w")
+	out_s = open(out_summary, "w")
+
+
+	for line_box, line_summary in zip(box_lines, summary_lines):
+
+		if num_gen >= sample_n:
+			break
+
+		box_list = line_box.strip().split("\t")
+		box_out_list, box_field_list = join_box(box_list)
+
+		this_box_dict = {}
+		for (this_name, this_value) in box_field_list:
+			this_box_dict[this_name] = this_value
+
+		if "name" not in this_box_dict:
+			continue
+
+		this_name = this_box_dict["name"]
+
+		field_iter = ["author", "genre", "publisher", "publication_date", "country"]
+		random.shuffle(field_iter)
+
+		for field_target in field_iter:
+
+			if field_target in this_box_dict:
+				this_field_value = this_box_dict[field_target]
+
+				###
+				if field_target == "author":
+					if num_1 > 20:
+						continue
+					num_1 += 1
+					dice = random.randint(1, 10)
+					if dice < 6:
+						this_out_summary = this_name + " is a novel by " + this_field_value + " ."
+					elif dice < 8:
+						this_out_summary = this_name + " is a novel written by " + this_field_value + " ."
+					elif dice < 10:
+						this_out_summary = this_name + " is written by " + this_field_value + " ."
+					else:
+						this_out_summary = this_name + " is a novel authored by " + this_field_value + " ."
+
+
+				elif field_target == "genre":
+					if this_field_value.split()[-1] != "novel":
+						if num_2 > 20:
+							continue
+						num_2 += 1
+						this_out_summary = this_name + " is a " + this_field_value + " novel ."
+					else:
+						continue
+
+				elif field_target == "publisher":
+					if num_3 > 20:
+						continue
+					num_3 += 1
+					dice = random.randint(1, 10)
+					if dice < 5:
+						this_out_summary = this_name + " is published by " + this_field_value + " ."
+					else:
+						this_out_summary = this_name + " is a novel published by " + this_field_value + " ."
+
+				elif field_target == "publication_date":
+					if num_4 > 20:
+						continue
+					num_4 += 1
+					dice = random.randint(1, 10)
+					if dice < 7:
+						this_out_summary = this_name + " is a novel published in " + this_field_value + " ."
+					else:
+						this_out_summary = this_name + " is a " + this_field_value + " novel ."
+
+				elif field_target == "country":
+					if num_5 > 20:
+						continue
+					num_5 += 1
+					this_out_summary = this_name + " is a " + this_field_value + " novel ."
+
+
+				this_out_box = []
+
+				if len(this_name.split(" ")) < 2:
+					this_out_box.append("name:" + this_name)
+				else:
+					for ind, token in enumerate(this_name.split(" ")):
+						this_out_box.append("name_" + str(ind + 1) + ":" + token)
+
+				if len(this_field_value.split(" ")) < 2:
+					this_out_box.append(field_target + ":" + this_field_value)
+				else:
+					for ind, token in enumerate(this_field_value.split(" ")):
+						this_out_box.append(field_target + "_" + str(ind + 1) + ":" + token)
+
+
+				out_b.write("\t".join(this_out_box) + "\n")
+				out_s.write(this_out_summary + "\n")
+
+				print this_out_box
+				print this_out_summary
+
+				num_gen += 1
+
+				break
+
+
+
+
+	print num_1
+	print num_2
+	print num_3
+	print num_4
+	print num_5
+
+	out_b.close()
+	out_s.close()
+
+### TODO: gen sample for songs, films
 
 
 if __name__=='__main__':
+
+
+	### generate domain examples
+	in_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data_oov/books.box"
+	in_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data_oov/books.summary"
+	out_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/books.box"
+	out_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/books.summary"
+
+	gen_sample_books(in_box, in_summary, out_box, out_summary, 100)
+
+	# ## remove 3 in all original processed files
+	# file_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/processed_data_withoov/test/test.summary.id"
+	# file_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/books_lines_invalid.txt"
+	# get_line_oov(file_in, file_out)
+
+	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data_withoov/test/"
+	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/test/"
+
+	# oov_line_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test_lines_valid.txt"
+
+	# remove_oov(folder_in, folder_out, oov_line_in)
+
+
+
+	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data_withoov/"
+	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data_oov/"
+
+	# valid_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/humans_lines_invalid.txt"
+	# file_names = ["valid.summary", "valid.box"]
+
+
+	# remove_oov_files(folder_in, folder_out, valid_line_in, file_names)
+
+
 
 
 	# ### generate mask
@@ -1045,7 +1417,7 @@ if __name__=='__main__':
 	#merge_value_field_vocab("/scratch/home/zhiyu/wiki2bio/original_data/")
 
 
-	data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
+	# data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
 
 	# # domain = "books"
 	# # in_box = data_path + domain + ".box"
@@ -1083,17 +1455,17 @@ if __name__=='__main__':
 	# add_vocab(final_field_vocab, films_field_vocab, final_field_vocab)
 
 
-	ori_vocab = data_path + "word_vocab_200.txt"
+	# ori_vocab = data_path + "word_vocab_200.txt"
 
-	books_all_vocab = data_path + "books_word_vocab_200.txt"
-	songs_all_vocab = data_path + "songs_word_vocab_200.txt"
-	films_all_vocab = data_path + "films_word_vocab_200.txt"
+	# books_all_vocab = data_path + "books_word_vocab_200.txt"
+	# songs_all_vocab = data_path + "songs_word_vocab_200.txt"
+	# films_all_vocab = data_path + "films_word_vocab_200.txt"
 
-	final_vocab = data_path + "human_books_songs_films_word_vocab_200.txt"
+	# final_vocab = data_path + "human_books_songs_films_word_vocab_200.txt"
 
-	add_vocab_freq(ori_vocab, books_all_vocab, final_vocab)
-	add_vocab_freq(final_vocab, songs_all_vocab, final_vocab)
-	add_vocab_freq(final_vocab, films_all_vocab, final_vocab)
+	# add_vocab_freq(ori_vocab, books_all_vocab, final_vocab)
+	# add_vocab_freq(final_vocab, songs_all_vocab, final_vocab)
+	# add_vocab_freq(final_vocab, films_all_vocab, final_vocab)
 
 
 	# file_in = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
