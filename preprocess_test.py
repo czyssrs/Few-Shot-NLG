@@ -1,4 +1,4 @@
-import re, time, os
+import re, time, os, sys
 import json
 import zipfile
 import string
@@ -7,16 +7,16 @@ from tqdm import tqdm
 import numpy as np
 from nltk.corpus import stopwords
 
+'''
+process test data for each domain in domain dir
+'''
 
-### TODO
-# root_path = "/scratch/home/zhiyu/wiki2bio/"
-root_path = "../emb_pointer_copyloss_am/"
-# merge_word_vocab = "crawled_data/merged_vocab.txt"
+method_path = "../emb_pointer_copyloss_am/"
+root_path = "../emb_pointer_copyloss_am/other_domain_data/"
 
-merge_field_vocab = root_path + "human_books_songs_films_field_vocab.txt"
-word_vocab = root_path + "human_books_songs_films_word_vocab_2000.txt"
+merge_field_vocab = "../emb_pointer_copyloss_am/human_books_songs_films_field_vocab.txt"
+word_vocab = "../emb_pointer_copyloss_am/human_books_songs_films_word_vocab_2000.txt"
 
-### vocab 2000 max 30
 extend_vocab_size = 200
 
 def join_box(list_in):
@@ -169,7 +169,7 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
     dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
 
     sw = stopwords.words("english")
-    freq_vocab = load_local_vocab(root_path + "human_books_songs_films_word_vocab_200.txt")
+    freq_vocab = load_local_vocab(method_path + "human_books_songs_films_word_vocab_200.txt")
 
 
     with open(in_box) as f:
@@ -329,23 +329,20 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
     out_p.close()
     out_rp.close()
 
-def split_infobox():
+def split_infobox(domain):
     """
     extract box content, field type and position information from infoboxes from original_data
     *.box.val is the box content (token)
     *.box.lab is the field type for each token
     *.box.pos is the position counted from the begining of a field
     """
-    bwfile = [root_path + "processed_data/train/train.box.val", 
-              root_path + "processed_data/valid/valid.box.val", 
-              root_path + "processed_data/test/test.box.val"]
-    bffile = [root_path + "processed_data/train/train.box.lab", 
-              root_path + "processed_data/valid/valid.box.lab", 
-              root_path + "processed_data/test/test.box.lab"]
-    bpfile = [root_path + "processed_data/train/train.box.pos", 
-              root_path + "processed_data/valid/valid.box.pos", 
-              root_path + "processed_data/test/test.box.pos"]
-    boxes = [root_path + "original_data/train.box", root_path + "original_data/valid.box", root_path + "original_data/test.box"]
+    bwfile = [root_path + domain + "/processed_data/test.box.val"]
+
+    bffile = [root_path + domain + "/processed_data/test.box.lab"]
+
+    bpfile = [root_path + domain + "/processed_data/test.box.pos"]
+
+    boxes = [root_path + domain + "/original_data/test.box"]
     
     mixb_word, mixb_label, mixb_pos = [], [], []
     for fboxes in boxes:
@@ -397,10 +394,10 @@ def split_infobox():
                 h.write('\n')
 
 
-def reverse_pos():
+def reverse_pos(domain):
     # get the position counted from the end of a field
-    bpfile = [root_path + "processed_data/train/train.box.pos", root_path + "processed_data/valid/valid.box.pos", root_path + "processed_data/test/test.box.pos"]
-    bwfile = [root_path + "processed_data/train/train.box.rpos", root_path + "processed_data/valid/valid.box.rpos", root_path + "processed_data/test/test.box.rpos"]
+    bpfile = [root_path + domain + "/processed_data/test.box.pos"]
+    bwfile = [root_path + domain + "/processed_data/test.box.rpos"]
     for k, pos in enumerate(bpfile):
         box = open(pos, "r").read().strip().split('\n')
         reverse_pos = []
@@ -419,20 +416,14 @@ def reverse_pos():
             for item in reverse_pos:
                 bw.write(" ".join(item) + '\n')
 
-def check_generated_box():
-    ftrain = [root_path + "processed_data/train/train.box.val",
-              root_path + "processed_data/train/train.box.lab",
-              root_path + "processed_data/train/train.box.pos",
-              root_path + "processed_data/train/train.box.rpos"]
-    ftest  = [root_path + "processed_data/test/test.box.val", 
-              root_path + "processed_data/test/test.box.lab",
-              root_path + "processed_data/test/test.box.pos",
-              root_path + "processed_data/test/test.box.rpos"]
-    fvalid = [root_path + "processed_data/valid/valid.box.val", 
-              root_path + "processed_data/valid/valid.box.lab", 
-              root_path + "processed_data/valid/valid.box.pos",
-              root_path + "processed_data/valid/valid.box.rpos"]
-    for case in [ftrain, ftest, fvalid]:
+def check_generated_box(domain):
+
+    ftest  = [root_path + domain + "/processed_data/test.box.val", 
+              root_path + domain + "/processed_data/test.box.lab",
+              root_path + domain + "/processed_data/test.box.pos",
+              root_path + domain + "/processed_data/test.box.rpos"]
+
+    for case in [ftest]:
         vals = open(case[0], 'r').read().strip().split('\n')
         labs = open(case[1], 'r').read().strip().split('\n')
         poses = open(case[2], 'r').read().strip().split('\n')
@@ -457,9 +448,9 @@ def check_generated_box():
             assert len(ppos) == len(rrpos)
 
 
-def split_summary_for_rouge():
-    bpfile = [root_path + "original_data/test.summary", root_path + "original_data/valid.summary"]
-    bwfile = [root_path + "processed_data/test/test_split_for_rouge/", root_path + "processed_data/valid/valid_split_for_rouge/"]
+def split_summary_for_rouge(domain):
+    bpfile = [root_path + domain + "/original_data/test.summary"]
+    bwfile = [root_path + domain + "/processed_data/test_split_for_rouge/"]
     for i, fi in enumerate(bpfile):
         fread = open(fi, 'r')
         k = 0
@@ -563,50 +554,31 @@ def load_local_vocab(vocab_file):
     return vocab
 
 
-def table2id():
-    fvals = [root_path + 'processed_data/train/train.box.val',
-             root_path + 'processed_data/test/test.box.val',
-             root_path + 'processed_data/valid/valid.box.val']
-    flabs = [root_path + 'processed_data/train/train.box.lab',
-             root_path + 'processed_data/test/test.box.lab',
-             root_path + 'processed_data/valid/valid.box.lab']
-    fsums = [root_path + 'original_data/train.summary',
-             root_path + 'original_data/test.summary',
-             root_path + 'original_data/valid.summary']
+def table2id(domain):
 
-    fvals2id = [root_path + 'processed_data/train/train.box.val.id',
-                root_path + 'processed_data/test/test.box.val.id',
-                root_path + 'processed_data/valid/valid.box.val.id']
-    flabs2id = [root_path + 'processed_data/train/train.box.lab.id',
-                root_path + 'processed_data/test/test.box.lab.id',
-                root_path + 'processed_data/valid/valid.box.lab.id']
-    fsums2id = [root_path + 'processed_data/train/train.summary.id',
-                root_path + 'processed_data/test/test.summary.id',
-                root_path + 'processed_data/valid/valid.summary.id']
+    fvals = [root_path + domain + "/processed_data/test.box.val"]
+
+    flabs = [root_path + domain + "/processed_data/test.box.lab"]
+
+    fsums = [root_path + domain + "/original_data/test.summary"]
+
+    fvals2id = [root_path + domain + "/processed_data/test.box.val.id"]
+    flabs2id = [root_path + domain + "/processed_data/test.box.lab.id"]
+    fsums2id = [root_path + domain + "/processed_data/test.summary.id"]
 
 
 
-    f_local_vocab = [root_path + 'processed_data/train/train_local_oov.txt',
-                    root_path + 'processed_data/test/test_local_oov.txt',
-                    root_path + 'processed_data/valid/valid_local_oov.txt']
+    f_local_vocab = [root_path + domain + "/processed_data/test_local_oov.txt"]
 
-    f_decoder_field = [root_path + 'processed_data/train/train_summary_field.txt',
-                        root_path + 'processed_data/test/test_summary_field.txt',
-                        root_path + 'processed_data/valid/valid_summary_field.txt']
+    f_decoder_field = [root_path + domain + "/processed_data/test_summary_field.txt"]
 
-    f_decoder_field_id = [root_path + 'processed_data/train/train_summary_field_id.txt',
-                        root_path + 'processed_data/test/test_summary_field_id.txt',
-                        root_path + 'processed_data/valid/valid_summary_field_id.txt']
+    f_decoder_field_id = [root_path + domain + "/processed_data/test_summary_field_id.txt"]
 
-    f_decoder_pos = [root_path + 'processed_data/train/train_summary_pos.txt',
-                    root_path + 'processed_data/test/test_summary_pos.txt',
-                    root_path + 'processed_data/valid/valid_summary_pos.txt']
+    f_decoder_pos = [root_path + domain + "/processed_data/test_summary_pos.txt"]
 
-    f_decoder_rpos = [root_path + 'processed_data/train/train_summary_rpos.txt',
-                    root_path + 'processed_data/test/test_summary_rpos.txt',
-                    root_path + 'processed_data/valid/valid_summary_rpos.txt']
+    f_decoder_rpos = [root_path + domain + "/processed_data/test_summary_rpos.txt"]
 
-    boxes = [root_path + "original_data/train.box", root_path + "original_data/test.box", root_path + "original_data/valid.box"]
+    boxes = [root_path + domain + "/original_data/test.box"]
 
 
 
@@ -623,35 +595,11 @@ def table2id():
         fi.close()
         fo.close()
 
-    ### write field to word mapping
-    field2word_file = root_path + "processed_data/field2word.txt"
-    with open(field2word_file, "w") as f:
-        for each_id in vocab._keyid2wordlist:
-            f.write(str(each_id) + "\t" + " ".join([str(tmp) for tmp in vocab._keyid2wordlist[each_id]]) + "\n")
-
-
-
-    # ### val and sum extend vocab
-    # for k, ff in enumerate(fsums):
-    #     fi = open(ff, 'r')
-    #     fo = open(fsums2id[k], 'w')
-    #     for line in fi:
-    #         items = line.strip().split()
-    #         fo.write(" ".join([str(vocab.word2id(word)) for word in items]) + '\n')
-    #     fi.close()
-    #     fo.close()
-
-    # for k, ff in enumerate(fvals):
-    #     fi = open(ff, 'r')
-    #     fo = open(fvals2id[k], 'w')
-    #     for line in fi:
-    #         items = line.strip().split()
-    #         fo.write(" ".join([str(vocab.word2id(word)) for word in items]) + '\n')
-    #     fi.close()
-    #     fo.close()
-
-    # f_test = root_path + "test_case.txt"
-    # f_t = open(f_test, "w")
+    # ### write field to word mapping
+    # field2word_file = root_path + domain + "/processed_data/field2word.txt"
+    # with open(field2word_file, "w") as f:
+    #     for each_id in vocab._keyid2wordlist:
+    #         f.write(str(each_id) + "\t" + " ".join([str(tmp) for tmp in vocab._keyid2wordlist[each_id]]) + "\n")
 
 
     ### gen field, pos for decoder
@@ -697,26 +645,6 @@ def table2id():
 
             res_sum_list = []
             res_val_list = []
-
-            # for token in line_sum_list:
-            #     this_vocab_id = vocab.word2id(token)
-            #     if this_vocab_id != 3:
-            #         res_sum_list.append(this_vocab_id)
-            #     else:
-            #         if num_local_oov > extend_vocab_size:
-            #             res_sum_list.append(this_vocab_id)
-            #             continue
-            #         ## oov
-            #         # in val oov
-            #         if token in line_val_list:
-            #             if token not in local_oov:
-            #                 local_oov[token] = (vocab_size + num_local_oov)
-            #                 num_local_oov += 1
-
-            #             res_sum_list.append(local_oov[token])
-
-            #         else:
-            #             res_sum_list.append(this_vocab_id)
 
 
             for token in line_val_list:
@@ -789,49 +717,47 @@ def table2id():
     # f_t.close()
 
 
-def preprocess():
+def preprocess(domain):
     """
     We use a triple <f, p+, p-> to represent the field information of a token in the specific field. 
     p+&p- are the position of the token in that field counted from the begining and the end of the field.
     For example, for a field (birthname, Jurgis Mikelatitis) in an infoboxes, we represent the field as
     (Jurgis, <birthname, 1, 2>) & (Mikelatitis, <birthname, 2, 1>)
     """
-    # print("extracting token, field type and position info from original data ...")
-    # time_start = time.time()
-    # split_infobox()
-    # reverse_pos()
-    # duration = time.time() - time_start
-    # print("extract finished in %.3f seconds" % float(duration))
+    print("extracting token, field type and position info from original data ...")
+    time_start = time.time()
+    split_infobox(domain)
+    reverse_pos(domain)
+    duration = time.time() - time_start
+    print("extract finished in %.3f seconds" % float(duration))
 
-    # print("spliting test and valid summaries for ROUGE evaluation ...")
-    # time_start = time.time()
-    # split_summary_for_rouge()
-    # duration = time.time() - time_start
-    # print("split finished in %.3f seconds" % float(duration))
+    print("spliting test and valid summaries for ROUGE evaluation ...")
+    time_start = time.time()
+    split_summary_for_rouge(domain)
+    duration = time.time() - time_start
+    print("split finished in %.3f seconds" % float(duration))
 
     print("turning words and field types to ids ...")
     time_start = time.time()
-    table2id()
+    table2id(domain)
     duration = time.time() - time_start
     print("idlization finished in %.3f seconds" % float(duration))
 
 
 
-def make_dirs():
-    os.mkdir(root_path + "results/")
-    os.mkdir(root_path + "results/res/")
-    os.mkdir(root_path + "results/evaluation/")
-    os.mkdir(root_path + "processed_data/")
-    os.mkdir(root_path + "processed_data/train/")
-    os.mkdir(root_path + "processed_data/test/")
-    os.mkdir(root_path + "processed_data/valid/")
-    os.mkdir(root_path + "processed_data/test/test_split_for_rouge/")
-    os.mkdir(root_path + "processed_data/valid/valid_split_for_rouge/")
+def make_dirs(domain):
+    os.mkdir(root_path + domain + "/results/")
+    os.mkdir(root_path + domain + "/results/res/")
+    os.mkdir(root_path + domain + "/results/evaluation/")
+    os.mkdir(root_path + domain + "/processed_data/")
+    os.mkdir(root_path + domain + "/processed_data/test_split_for_rouge/")
 
 if __name__ == '__main__':
-    # make_dirs()
-    preprocess()
-    check_generated_box()
+
+    domain = sys.argv[1]
+    make_dirs(domain)
+    preprocess(domain)
+    check_generated_box(domain)
     print("check done")
 
 

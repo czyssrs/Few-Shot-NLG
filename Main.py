@@ -21,6 +21,37 @@ root_path = "../emb_pointer_copyloss_am/"
 ### data
 tf.app.flags.DEFINE_string("dir", root_path + "processed_data", 'data set directory')
 tf.app.flags.DEFINE_string("seed_dir", root_path + "domain_descriptions_processed_data/", "domain seed dir")
+tf.app.flags.DEFINE_string("source_seed", "humans_single", "source seed dir")
+tf.app.flags.DEFINE_string("books_seed", "books_single", "target seed dir")
+
+tf.app.flags.DEFINE_string("songs_seed", "songs", "target seed dir")
+tf.app.flags.DEFINE_string("films_seed", "films", "target seed dir")
+
+tf.app.flags.DEFINE_boolean("use_coverage", True,'use coverage or not')
+tf.app.flags.DEFINE_float("coverage_penalty", 1.0,'coverage loss penalty')
+
+tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
+tf.app.flags.DEFINE_float("copy_gate_penalty", 0.1, 'copy gate loss penalty')
+
+tf.app.flags.DEFINE_integer("extend_vocab_size", 200,'extended vocabulary size for oov')
+
+tf.app.flags.DEFINE_float("rnet_penalty", 100.0, 'copy gate loss penalty')
+tf.app.flags.DEFINE_integer("seed_round", 200, "train seed batch every n round of source")
+tf.app.flags.DEFINE_integer("seed_epoch", 1, "train seed data for n epoch each time")
+
+
+
+tf.app.flags.DEFINE_string("mode",'train','train or test')
+tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
+tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
+
+tf.app.flags.DEFINE_boolean("dual_attention", True,'dual attention layer or normal attention')
+tf.app.flags.DEFINE_boolean("fgate_encoder", True,'add field gate in encoder lstm')
+
+tf.app.flags.DEFINE_boolean("field", False,'concat field information to word embedding')
+tf.app.flags.DEFINE_boolean("position", False,'concat position information to word embedding')
+tf.app.flags.DEFINE_boolean("encoder_pos", True,'position information in field-gated encoder')
+tf.app.flags.DEFINE_boolean("decoder_pos", True,'position information in dual attention decoder')
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
 tf.app.flags.DEFINE_integer("emb_size", 300, "Size of embedding.")
@@ -34,31 +65,6 @@ tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 5420,'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 1000,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
-
-tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
-tf.app.flags.DEFINE_float("coverage_penalty", 1.0,'coverage loss penalty')
-
-tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
-tf.app.flags.DEFINE_float("copy_gate_penalty", 0.1, 'copy gate loss penalty')
-
-tf.app.flags.DEFINE_integer("extend_vocab_size", 200,'extended vocabulary size for oov')
-
-tf.app.flags.DEFINE_float("rnet_penalty", 100.0, 'copy gate loss penalty')
-tf.app.flags.DEFINE_integer("seed_round", 500, "train seed batch every n round of source")
-tf.app.flags.DEFINE_integer("seed_epoch", 1, "train seed data for n epoch each time")
-
-tf.app.flags.DEFINE_string("mode",'train','train or test')
-tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
-tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
-
-
-tf.app.flags.DEFINE_boolean("dual_attention", True,'dual attention layer or normal attention')
-tf.app.flags.DEFINE_boolean("fgate_encoder", True,'add field gate in encoder lstm')
-
-tf.app.flags.DEFINE_boolean("field", False,'concat field information to word embedding')
-tf.app.flags.DEFINE_boolean("position", False,'concat position information to word embedding')
-tf.app.flags.DEFINE_boolean("encoder_pos", True,'position information in field-gated encoder')
-tf.app.flags.DEFINE_boolean("decoder_pos", True,'position information in dual attention decoder')
 
 tf.app.flags.DEFINE_integer("report_loss", 100,'report loss results after some steps')
 
@@ -134,14 +140,16 @@ def train(sess, dataloader, model):
     record_mse_loss = 0.0
     record_copy_loss = 0.0
     record_seed_loss = 0.0
+    record_cov_loss = 0.0
 
     for _ in range(FLAGS.epoch):
-        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.batch_size, True):
-            this_loss, this_mseloss, this_copy_gate_loss = model(x, sess, 0)
+        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.batch_size, True, 0):
+            this_loss, this_mseloss, this_copy_gate_loss, this_cov_loss = model(x, sess, 0)
             loss += this_loss
             record_loss += this_loss
             record_mse_loss += this_mseloss
             record_copy_loss += this_copy_gate_loss
+            record_cov_loss += this_cov_loss
             k += 1
             record_k += 1
             progress_bar(k % FLAGS.report, FLAGS.report)
@@ -150,12 +158,13 @@ def train(sess, dataloader, model):
             # write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
 
             if (record_k % FLAGS.report_loss == 0):
-                write_log("%d : loss = %.3f, mseloss = %.3f, copyloss = %.3f" % \
-                    (k, record_loss / record_k, record_mse_loss / record_k, record_copy_loss / record_k))
+                write_log("%d : loss = %.3f, mseloss = %.3f, copyloss = %.3f, covloss = %.3f" % \
+                    (k, record_loss / record_k, record_mse_loss / record_k, record_copy_loss / record_k, record_cov_loss / record_k))
                 record_k = 0
                 record_loss = 0.0
                 record_mse_loss = 0.0
                 record_copy_loss = 0.0
+                record_cov_loss = 0.0
 
 
             ### train seed
@@ -163,15 +172,17 @@ def train(sess, dataloader, model):
                 loss_rnet = 0.0
                 mse_loss_rnet = 0.0
                 copy_loss_rnet = 0.0
+                cov_loss_rnet = 0.0
                 for _ in range(FLAGS.seed_epoch):
-                    for x in dataloader.batch_iter(seedset, oov_list_seed, FLAGS.batch_size, True):
-                        this_loss_rnet, this_mseloss_rnet, this_copy_gate_loss_rnet = model(x, sess, 1)
+                    for x in dataloader.batch_iter(seedset, oov_list_seed, FLAGS.batch_size, True, 1):
+                        this_loss_rnet, this_mseloss_rnet, this_copy_gate_loss_rnet, this_cov_loss_rnet = model(x, sess, 1)
                         loss_rnet += this_loss_rnet
                         mse_loss_rnet += this_mseloss_rnet
                         copy_loss_rnet += this_copy_gate_loss_rnet
+                        cov_loss_rnet += this_cov_loss_rnet
 
-                write_log("%d R net: loss = %.3f, mseloss = %.3f, copyloss = %.3f" % \
-                    (k, loss_rnet / FLAGS.seed_epoch, mse_loss_rnet / FLAGS.seed_epoch, copy_loss_rnet / FLAGS.seed_epoch))
+                write_log("%d R net: loss = %.3f, mseloss = %.3f, copyloss = %.3f, covloss = %.3f" % \
+                    (k, loss_rnet / FLAGS.seed_epoch, mse_loss_rnet / FLAGS.seed_epoch, copy_loss_rnet / FLAGS.seed_epoch, cov_loss_rnet / FLAGS.seed_epoch))
 
 
             # if k % FLAGS.seed_round == 0:
@@ -179,7 +190,7 @@ def train(sess, dataloader, model):
             #     mse_loss_rnet = 0.0
             #     copy_loss_rnet = 0.0
             #     for _ in range(FLAGS.seed_epoch):
-            #         x = dataloader.get_one_batch(seedset, oov_list_seed, FLAGS.batch_size)
+            #         x = dataloader.get_one_batch(seedset, oov_list_seed, FLAGS.batch_size, 1)
             #         this_loss_rnet, this_mseloss_rnet, this_copy_gate_loss_rnet = model(x, sess, 1)
             #         loss_rnet += this_loss_rnet
             #         mse_loss_rnet += this_mseloss_rnet
@@ -339,7 +350,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     pred_unk, pred_mask = [], []
     
     k = 0
-    for x in dataloader.batch_iter(evalset, oov_list, FLAGS.batch_size, False):
+    for x in dataloader.batch_iter(evalset, oov_list, FLAGS.batch_size, False, 0):
         predictions, atts = model.generate(x, sess)
         this_oov_list = x['oov_map']
         atts = np.squeeze(atts)
@@ -405,7 +416,7 @@ def main():
 
         # init_word_emb = None
 
-        dataloader = DataLoader(FLAGS.dir, FLAGS.seed_dir, FLAGS.limits)
+        dataloader = DataLoader(FLAGS.dir, FLAGS.seed_dir, FLAGS.source_seed, FLAGS.books_seed, FLAGS.songs_seed, FLAGS.films_seed, FLAGS.limits)
         field_id2word = dataloader.fieldid2word
 
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size, emb_size=FLAGS.emb_size,

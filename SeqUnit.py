@@ -202,7 +202,7 @@ class SeqUnit(object):
         # ======================================== encoder ======================================== #
         if self.fgate_enc:
             print 'field gated encoder used'
-            en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed, self.encoder_len_domain) # plus domain embedding
+            self.en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed, self.encoder_len_domain) # plus domain embedding
         else:
             print 'normal encoder used'
             en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len_domain)
@@ -211,7 +211,7 @@ class SeqUnit(object):
         # ======================================== R net ======================================== #
 
         print 'Recognition net'
-        en_outputs_f, en_state_f = self.rnet(self.encoder_embed, self.field_pos_embed, self.encoder_len_domain) # R(f, d)
+        self.en_outputs_f, en_state_f = self.rnet(self.encoder_embed, self.field_pos_embed, self.encoder_len_domain) # R(f, d)
         en_outputs_x, en_state_x = self.rnet(self.decoder_embed_rnet, self.field_pos_embed_dec, self.decoder_len_rnet) # R(x, d)
 
 
@@ -227,21 +227,20 @@ class SeqUnit(object):
             with tf.variable_scope(scope_name):
                 # self.att_layer = dualAttentionWrapper(self.emb_size, self.hidden_size, self.hidden_size, self.field_attention_size,
                 #                                         en_outputs, self.field_pos_embed, "attention")
-                self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size,
-                                                        en_outputs, self.field_pos_embed, "attention")
+                self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size, "attention")
                 self.units.update({'attention': self.att_layer})
 
-                ### for rnet
-                self.att_layer_rnet = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size,
-                                                        en_outputs_f, self.field_pos_embed, "attention_rnet")
-                self.units.update({'attention_rnet': self.att_layer_rnet})
+                # ### for rnet
+                # self.att_layer_rnet = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size,
+                #                                         en_outputs_f, self.field_pos_embed, "attention_rnet")
+                # self.units.update({'attention_rnet': self.att_layer_rnet})
         else:
             print "normal attention used"
             with tf.variable_scope(scope_name):
                 self.att_layer = AttentionWrapper(self.hidden_size, self.hidden_size, en_outputs, "attention")
                 self.units.update({'attention': self.att_layer})
-                self.att_layer_rnet = AttentionWrapper(self.hidden_size, self.hidden_size, en_outputs_f, "attention_rnet")
-                self.units.update({'attention_rnet': self.att_layer_rnet})
+                # self.att_layer_rnet = AttentionWrapper(self.hidden_size, self.hidden_size, en_outputs_f, "attention_rnet")
+                # self.units.update({'attention_rnet': self.att_layer_rnet})
 
 
 
@@ -272,8 +271,13 @@ class SeqUnit(object):
         self.loss_rnet *= mask
         self.loss_rnet = tf.reduce_sum(self.loss_rnet)
         self.copy_gate_loss_rnet = (self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_rnet))
+        self.de_conv_loss_rnet *= self.coverage_penalty
+
         if self.use_copy_gate:
             self.loss_rnet += self.copy_gate_loss_rnet
+        if self.use_coverage:
+            self.loss_rnet += self.de_conv_loss_rnet
+
         self.loss_f_mse = tf.losses.mean_squared_error(en_state_f, en_state_x)
         self.loss_f_mse *= self.rnet_penalty
         self.loss_rnet += self.loss_f_mse
@@ -443,12 +447,14 @@ class SeqUnit(object):
 
         def loop_fn(t, x_t, s_t, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
             o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
-            ### enc
+
+            ## for enc-dec
             if mode == 0:
-                o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum)
-            ### rnet
+                o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum, self.en_outputs, self.field_pos_embed)
+            ## for rnet
             else:
-                o_t, o_weight, p_gen = self.att_layer_rnet(o_t, x_t, s_t, coverage_att_sum)
+                o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum, self.en_outputs_f, self.field_pos_embed)
+
 
             o_t = self.dec_out(o_t, finished) # batch * self.target_vocab
 
@@ -489,7 +495,7 @@ class SeqUnit(object):
 
 
 
-            ### coverage. for all vocab
+            ### coverage
             this_covloss = tf.reduce_sum(tf.minimum(coverage_att_sum, o_weight))
             covloss += this_covloss
             coverage_att_sum += o_weight
@@ -534,7 +540,7 @@ class SeqUnit(object):
 
         def loop_fn(t, x_t, s_t, emit_ta, att_ta, coverage_att_sum, emit_ta_test, finished):
             o_t, s_nt = self.dec_lstm(x_t, s_t, finished)
-            o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum)
+            o_t, o_weight, p_gen = self.att_layer(o_t, x_t, s_t, coverage_att_sum, self.en_outputs, self.field_pos_embed)
             o_t = self.dec_out(o_t, finished)
 
             ### pointer generator
@@ -751,7 +757,7 @@ class SeqUnit(object):
 
         ### mode 0: train enc dec; mode 1: train rnet
         if mode == 0:
-            loss,  _, loss_mse, copy_gate_loss = sess.run([self.mean_loss, self.train_op, self.loss_F_mse, self.copy_gate_loss],
+            loss,  _, loss_mse, copy_gate_loss, de_conv_loss = sess.run([self.mean_loss, self.train_op, self.loss_F_mse, self.copy_gate_loss, self.de_conv_loss],
                                                            {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
                                                             self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
                                                             self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
@@ -760,7 +766,7 @@ class SeqUnit(object):
                                                             self.decoder_rpos_input: x['dec_rpos'], self.domain_id: x['domain_ind']})
 
         else:
-            loss,  _, loss_mse, copy_gate_loss = sess.run([self.loss_rnet, self.train_op_rnet, self.loss_f_mse, self.copy_gate_loss_rnet],
+            loss,  _, loss_mse, copy_gate_loss, de_conv_loss = sess.run([self.loss_rnet, self.train_op_rnet, self.loss_f_mse, self.copy_gate_loss_rnet, self.de_conv_loss_rnet],
                                                            {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
                                                             self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
                                                             self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
@@ -768,13 +774,14 @@ class SeqUnit(object):
                                                             self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
                                                             self.decoder_rpos_input: x['dec_rpos'], self.domain_id: x['domain_ind']})
 
-        return loss, loss_mse, copy_gate_loss
+        return loss, loss_mse, copy_gate_loss, de_conv_loss
 
     def generate(self, x, sess):
         predictions, atts = sess.run([self.g_tokens, self.atts],
                                {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'], 
                                 self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
-                                self.encoder_rpos: x['enc_rpos'], self.domain_id: x['domain_ind']})
+                                self.encoder_rpos: x['enc_rpos'], self.domain_id: x['domain_ind'],
+                                self.decoder_input: x['dec_in']})
         return predictions, atts
 
     def generate_beam(self, x, sess):

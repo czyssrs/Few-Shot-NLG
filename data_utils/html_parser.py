@@ -8,14 +8,14 @@ import time
 from tqdm import tqdm
 from BeautifulSoup import BeautifulSoup, NavigableString, Tag
 
-raw_dest_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/raw/films/"
+raw_dest_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/raw/books/"
 wiki_root = "https://en.wikipedia.org"
 
 
-out_box = "/scratch/home/zhiyu/wiki2bio/crawled_data/films.box"
-out_summary = "/scratch/home/zhiyu/wiki2bio/crawled_data/films.summary"
+out_box = "/scratch/home/zhiyu/wiki2bio/crawled_data/books.box"
+out_summary = "/scratch/home/zhiyu/wiki2bio/crawled_data/books.summary"
 
-out_raw = "/scratch/home/zhiyu/wiki2bio/crawled_data/films.raw.txt"
+out_raw = "/scratch/home/zhiyu/wiki2bio/crawled_data/books.raw.txt"
 
 
 ############
@@ -282,6 +282,8 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 							invalid_flag = 1
 
 
+
+
 						field_value = field_value.replace("(s)", "s")
 						field_value = field_value.replace("_", " ")
 						## tokenize field name
@@ -291,6 +293,15 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 
 						if field_value in summary:
 							valid_flag = 1
+
+
+						##### constraints list here: 
+						### for books
+						if field_name == "name":
+							field_value = field_value.replace(" -lrb- novel -rrb-", "")
+						if field_name == "genre":
+							field_value = field_value.replace(" novel", "")
+
 
 						fv_list = field_value.split(" ")
 

@@ -9,7 +9,7 @@ import numpy as np
 
 
 class DataLoader(object):
-    def __init__(self, data_dir, seed_dir, limits):
+    def __init__(self, data_dir, seed_dir, source_seed, books_seed, songs_seed, films_seed, limits):
 
         self.train_data_path = [data_dir + '/train/train.summary.id', data_dir + '/train/train.box.val.id',
                                 data_dir + '/train/train.box.lab.id', data_dir + '/train/train.box.pos',
@@ -26,22 +26,22 @@ class DataLoader(object):
                               data_dir + '/valid/valid.box.rpos', data_dir + '/valid/valid_summary_field_id.txt',
                                 data_dir + '/valid/valid_summary_pos.txt', data_dir + '/valid/valid_summary_rpos.txt']
 
-        self.seed_data_path_humans = [seed_dir + '/humans/train.summary.id', seed_dir + '/humans/train.box.val.id',
-                                    seed_dir + '/humans/train.box.lab.id', seed_dir + '/humans/train.box.pos',
-                                    seed_dir + '/humans/train.box.rpos', seed_dir + '/humans/train_summary_field_id.txt',
-                                    seed_dir + '/humans/train_summary_pos.txt', seed_dir + '/humans/train_summary_rpos.txt']
+        self.seed_data_path_humans = [seed_dir + source_seed + '/train.summary.id', seed_dir + source_seed + '/train.box.val.id',
+                                    seed_dir + source_seed + '/train.box.lab.id', seed_dir + source_seed + '/train.box.pos',
+                                    seed_dir + source_seed + '/train.box.rpos', seed_dir + source_seed + '/train_summary_field_id.txt',
+                                    seed_dir + source_seed + '/train_summary_pos.txt', seed_dir + source_seed + '/train_summary_rpos.txt']
 
-        self.seed_data_path_books = [seed_dir + '/books/train.summary.id', seed_dir + '/books/train.box.val.id',
-                                    seed_dir + '/books/train.box.lab.id', seed_dir + '/books/train.box.pos',
-                                    seed_dir + '/books/train.box.rpos', seed_dir + '/books/train_summary_field_id.txt',
-                                    seed_dir + '/books/train_summary_pos.txt', seed_dir + '/books/train_summary_rpos.txt']
+        self.seed_data_path_books = [seed_dir + books_seed + '/train.summary.id', seed_dir + books_seed + '/train.box.val.id',
+                                    seed_dir + books_seed + '/train.box.lab.id', seed_dir + books_seed + '/train.box.pos',
+                                    seed_dir + books_seed + '/train.box.rpos', seed_dir + books_seed + '/train_summary_field_id.txt',
+                                    seed_dir + books_seed + '/train_summary_pos.txt', seed_dir + books_seed + '/train_summary_rpos.txt']
 
 
         self.train_local_oov_path = data_dir + "/train/train_local_oov.txt"
         self.dev_local_oov_path = data_dir + "/valid/valid_local_oov.txt"
         self.test_local_oov_path = data_dir + "/test/test_local_oov.txt"
-        self.seed_local_oov_path_humans = seed_dir + "/humans/train_local_oov.txt"
-        self.seed_local_oov_path_books = seed_dir + "/books/train_local_oov.txt"
+        self.seed_local_oov_path_humans = seed_dir + source_seed + "/train_local_oov.txt"
+        self.seed_local_oov_path_books = seed_dir + books_seed + "/train_local_oov.txt"
 
         self.limits = limits
         self.man_text_len = 100
@@ -50,7 +50,7 @@ class DataLoader(object):
 
         print('Reading datasets ...')
         self.train_set = self.load_data(self.train_data_path, 0)
-        self.test_set = self.load_data(self.test_data_path, 0)
+        self.test_set = self.load_data(self.test_data_path, 1)
         self.dev_set = self.load_data(self.dev_data_path, 0)
         self.seed_set_humans = self.load_data(self.seed_data_path_humans, 0)
         self.seed_set_books = self.load_data(self.seed_data_path_books, 1)
@@ -159,6 +159,7 @@ class DataLoader(object):
         ### plus domain embedding
         ### humans: 0, books: 1
         domain_ind = np.full((len(summaries)), domain_id, dtype=int).tolist()
+        print domain_ind[0]
 
 
         return summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos, domain_ind
@@ -166,7 +167,7 @@ class DataLoader(object):
 
 
 
-    def get_one_batch(self, data, oov_list, batch_size):
+    def get_one_batch(self, data, oov_list, batch_size, is_seed):
         '''
         get one batch from seed
         '''
@@ -216,7 +217,11 @@ class DataLoader(object):
 
             assert len(dec_field) == len(summary)
 
-            gold = summary + [2] + [0] * (max_summary_len - summary_len)
+            if not is_seed:
+                gold = summary + [2] + [0] * (max_summary_len - summary_len)
+            else:
+                gold = summary + [0] + [0] * (max_summary_len - summary_len)
+
             summary = summary + [0] * (max_summary_len - summary_len)
 
             text = text + [0] * (max_text_len - text_len)
@@ -288,7 +293,7 @@ class DataLoader(object):
 
 
 
-    def batch_iter(self, data, oov_list, batch_size, shuffle):
+    def batch_iter(self, data, oov_list, batch_size, shuffle, is_seed):
         summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos, domain_ind = data
         data_size = len(summaries)
         num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
@@ -334,7 +339,11 @@ class DataLoader(object):
 
                 assert len(dec_field) == len(summary)
 
-                gold = summary + [2] + [0] * (max_summary_len - summary_len)
+                if not is_seed:
+                    gold = summary + [2] + [0] * (max_summary_len - summary_len)
+                else:
+                    gold = summary + [0] + [0] * (max_summary_len - summary_len)
+
                 summary = summary + [0] * (max_summary_len - summary_len)
 
                 text = text + [0] * (max_text_len - text_len)
