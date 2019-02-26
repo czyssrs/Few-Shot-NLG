@@ -50,7 +50,7 @@ tf.app.flags.DEFINE_integer("source_vocab", 50257,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2756,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 50257,'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 50,'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report", 500,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
 tf.app.flags.DEFINE_integer("report_loss", 10,'report loss results after some steps')
@@ -73,7 +73,7 @@ field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
 vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
 word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
-processed_data_dir = root_path + FLAGS.domain + "/processed_data"
+processed_data_dir = root_path + FLAGS.domain + "/processed_data_200"
 
 ### bpe vocab
 enc = encoder.get_encoder("117M")

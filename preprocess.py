@@ -149,7 +149,7 @@ def fuzzy_match_rep(source, substring, field_name):
     # print max_index
 
 
-    if float(num_consist) / len(this_value_list) > 0.6:
+    if float(num_consist) / len(this_value_list) > 0.9:
         if max_index - min_index <= 1.5 * len(this_value_list):
             ### regard as match
             to_replace = " ".join(out_summary_list[min_index:max_index+1])
@@ -625,18 +625,18 @@ def preprocess(domain):
     For example, for a field (birthname, Jurgis Mikelatitis) in an infoboxes, we represent the field as
     (Jurgis, <birthname, 1, 2>) & (Mikelatitis, <birthname, 2, 1>)
     """
-    # print("extracting token, field type and position info from original data ...")
-    # time_start = time.time()
-    # split_infobox(domain)
-    # reverse_pos(domain)
-    # duration = time.time() - time_start
-    # print("extract finished in %.3f seconds" % float(duration))
+    print("extracting token, field type and position info from original data ...")
+    time_start = time.time()
+    split_infobox(domain)
+    reverse_pos(domain)
+    duration = time.time() - time_start
+    print("extract finished in %.3f seconds" % float(duration))
 
-    # print("spliting test and valid summaries for ROUGE evaluation ...")
-    # time_start = time.time()
-    # split_summary_for_rouge(domain)
-    # duration = time.time() - time_start
-    # print("split finished in %.3f seconds" % float(duration))
+    print("spliting test and valid summaries for ROUGE evaluation ...")
+    time_start = time.time()
+    split_summary_for_rouge(domain)
+    duration = time.time() - time_start
+    print("split finished in %.3f seconds" % float(duration))
 
     print("turning words and field types to ids ...")
     time_start = time.time()
@@ -647,9 +647,9 @@ def preprocess(domain):
 
 
 def make_dirs(domain):
-    os.mkdir(root_path + domain + "/results/")
-    os.mkdir(root_path + domain + "/results/res/")
-    os.mkdir(root_path + domain + "/results/evaluation/")
+    # os.mkdir(root_path + domain + "/results/")
+    # os.mkdir(root_path + domain + "/results/res/")
+    # os.mkdir(root_path + domain + "/results/evaluation/")
     os.mkdir(root_path + domain + "/processed_data/")
     os.mkdir(root_path + domain + "/processed_data/train/")
     os.mkdir(root_path + domain + "/processed_data/test/")
@@ -659,7 +659,7 @@ def make_dirs(domain):
 
 if __name__ == '__main__':
     domain = sys.argv[1]
-    # make_dirs(domain)
+    make_dirs(domain)
     preprocess(domain)
     check_generated_box(domain)
     print("check done")

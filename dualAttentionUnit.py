@@ -58,7 +58,7 @@ class dualAttentionWrapper(object):
         # phi_fds2d = tf.tanh(tf.nn.xw_plus_b(fds2d, self.Wf, self.bf))
         # self.phi_fds = tf.reshape(phi_fds2d, tf.shape(self.hs))
 
-    def __call__(self, x, in_t, coverage_att_sum, hs, fds, finished = None):
+    def __call__(self, x, in_t, last_x, coverage_att_sum, hs, fds, finished = None):
 
         hs = tf.transpose(hs, [1,0,2])  # input_len * batch * input_size
         fds = tf.transpose(fds, [1,0,2])
@@ -101,7 +101,7 @@ class dualAttentionWrapper(object):
 
         #### pointer generator
         ### p_gen = sigmod(wh * ht + ws * st + wx * xt + bptr)
-        p_gen = tf.matmul(context, self.wh_ptr) + tf.matmul(x, self. ws_ptr) + tf.matmul(in_t, self.wx_ptr) + self.b_ptr
+        p_gen = tf.matmul(context, self.wh_ptr) + tf.matmul(last_x, self. ws_ptr) + tf.matmul(in_t, self.wx_ptr) + self.b_ptr
         p_gen = tf.sigmoid(p_gen) # batch * 1
 
         weights = tf.squeeze(weights, 2) # len * batch
