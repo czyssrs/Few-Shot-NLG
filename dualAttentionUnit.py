@@ -39,7 +39,7 @@ class dualAttentionWrapper(object):
             ### add pointer params
             ### p_gen = sigmod(wh * ht + ws * st + wx * xt + bptr)
             self.wh_ptr = tf.get_variable('wh_ptr', [self.hidden_size, 1])
-            self.ws_ptr = tf.get_variable('ws_ptr', [2*self.hidden_size, 1])
+            self.ws_ptr = tf.get_variable('ws_ptr', [self.hidden_size, 1])
             self.wx_ptr = tf.get_variable('wx_ptr', [self.emb_size, 1])
             self.b_ptr = tf.get_variable('b_ptr', [1])
 
@@ -58,7 +58,7 @@ class dualAttentionWrapper(object):
         # phi_fds2d = tf.tanh(tf.nn.xw_plus_b(fds2d, self.Wf, self.bf))
         # self.phi_fds = tf.reshape(phi_fds2d, tf.shape(self.hs))
 
-    def __call__(self, x, in_t, s_t, coverage_att_sum, hs, fds, finished = None):
+    def __call__(self, x, in_t, coverage_att_sum, hs, fds, finished = None):
 
         hs = tf.transpose(hs, [1,0,2])  # input_len * batch * input_size
         fds = tf.transpose(fds, [1,0,2])
@@ -74,47 +74,45 @@ class dualAttentionWrapper(object):
         ### how to incorporate coverage penalty? for each or for all?
         gamma_h = tf.tanh(tf.nn.xw_plus_b(x, self.Ws, self.bs))  # batch * hidden_size
         alpha_h = tf.tanh(tf.nn.xw_plus_b(x, self.Wr, self.br))
-        fd_weights = tf.reduce_sum(phi_fds * alpha_h, reduction_indices=2, keep_dims=True) # len * batch * 1
-        fd_weights = tf.exp(fd_weights - tf.reduce_max(fd_weights, reduction_indices=0, keep_dims=True))
-        fd_weights = tf.divide(fd_weights, (1e-6 + tf.reduce_sum(fd_weights, reduction_indices=0, keep_dims=True))) # len * batch * 1
+        fd_weights = tf.reduce_sum(phi_fds * alpha_h, reduction_indices=2, keepdims=True) # len * batch * 1
+        fd_weights = tf.exp(fd_weights - tf.reduce_max(fd_weights, reduction_indices=0, keepdims=True))
+        fd_weights = tf.divide(fd_weights, (1e-6 + tf.reduce_sum(fd_weights, reduction_indices=0, keepdims=True))) # len * batch * 1
 
 
-        weights = tf.reduce_sum(phi_hs * gamma_h, reduction_indices=2, keep_dims=True)  # input_len * batch * 1
+        weights = tf.reduce_sum(phi_hs * gamma_h, reduction_indices=2, keepdims=True)  # input_len * batch * 1
 
 
-        weights = tf.exp(weights - tf.reduce_max(weights, reduction_indices=0, keep_dims=True))
-        weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, reduction_indices=0, keep_dims=True)))
-        weights = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, reduction_indices=0, keep_dims=True))) # len * batch * 1
+        weights = tf.exp(weights - tf.reduce_max(weights, reduction_indices=0, keepdims=True))
+        weights = tf.divide(weights, (1e-6 + tf.reduce_sum(weights, reduction_indices=0, keepdims=True)))
+        weights = tf.divide(weights * fd_weights, (1e-6 + tf.reduce_sum(weights * fd_weights, reduction_indices=0, keepdims=True))) # len * batch * 1
 
         ### coverage
         # coverage_penalty = tf.tanh(tf.nn.xw_plus_b(coverage_att_sum, self.Wc, self.bc))
         coverage_penalty = tf.tanh(coverage_att_sum * self.Wc + self.bc)
         coverage_penalty = tf.expand_dims(tf.transpose(coverage_penalty, [1,0]), -1) # enc_len * batch * 1
-        coverage_penalty = tf.exp(coverage_penalty - tf.reduce_max(coverage_penalty, reduction_indices=0, keep_dims=True))
-        weights = tf.divide(weights * coverage_penalty, (1e-6 + tf.reduce_sum(weights * coverage_penalty, reduction_indices=0, keep_dims=True))) # len * batch * 1
+        coverage_penalty = tf.exp(coverage_penalty - tf.reduce_max(coverage_penalty, reduction_indices=0, keepdims=True))
+        weights = tf.divide(weights * coverage_penalty, (1e-6 + tf.reduce_sum(weights * coverage_penalty, reduction_indices=0, keepdims=True))) # len * batch * 1
 
 
 
         
         context = tf.reduce_sum(hs * weights, reduction_indices=0)  # batch * input_size
-        out = tf.tanh(tf.nn.xw_plus_b(tf.concat([context, x], -1), self.Wo, self.bo))
+        # out = tf.tanh(tf.nn.xw_plus_b(tf.concat([context, x], -1), self.Wo, self.bo))
 
         #### pointer generator
         ### p_gen = sigmod(wh * ht + ws * st + wx * xt + bptr)
-        h_prev, c_prev = s_t
-        s_t = tf.concat([h_prev, c_prev], 1)
-        p_gen = tf.matmul(context, self.wh_ptr) + tf.matmul(s_t, self.ws_ptr) + tf.matmul(in_t, self.wx_ptr) + self.b_ptr
+        p_gen = tf.matmul(context, self.wh_ptr) + tf.matmul(x, self. ws_ptr) + tf.matmul(in_t, self.wx_ptr) + self.b_ptr
         p_gen = tf.sigmoid(p_gen) # batch * 1
 
-        weights = tf.squeeze(weights) # len * batch
+        weights = tf.squeeze(weights, 2) # len * batch
         weights = tf.transpose(weights, [1,0]) # batch * len
 
         if finished is not None:
-            out = tf.where(finished, tf.zeros_like(out), out)
+            # out = tf.where(finished, tf.zeros_like(out), out)
             p_gen = tf.where(finished, tf.zeros_like(p_gen), p_gen)
             weights = tf.where(finished, tf.zeros_like(weights), weights)
 
-        return out, weights, p_gen
+        return weights, p_gen
 
     def save(self, path):
         param_values = {}

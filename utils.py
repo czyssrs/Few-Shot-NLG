@@ -8,6 +8,7 @@ import zipfile
 import string
 import Queue
 import random
+import encoder
 import numpy as np
 from nlgeval import NLGEval
 from nlgeval import compute_metrics
@@ -53,7 +54,7 @@ def gen_compare(cider_in, table_in, summary_ours_in, summary_with_unk, summary_g
 		score_cider = res_cider["CIDEr"]
 		score_cider_d = res_cider["CIDErD"]
 
-		print len(score_cider_d)
+		print (len(score_cider_d))
 
 	nlgeval = NLGEval()
 
@@ -1007,6 +1008,8 @@ def get_line_oov(file_in, file_out):
 	with open(file_out, "w") as f:
 		f.write("\n".join([str(tmp) for tmp in without_3]))
 
+	print len(without_3)
+
 
 def remove_oov(folder_in, folder_out, valid_line_in):
 
@@ -1065,6 +1068,39 @@ def remove_oov_files(folder_in, folder_out, valid_line_in, filenames):
 			f_out.write("\n".join(out_lines))
 
 
+
+
+
+def field_statistic(box_in):
+	'''
+	get most frequent field
+	'''
+
+	with open(box_in) as f:
+		lines_box = f.readlines()
+
+	field_dict = {}
+
+
+	for box in lines_box:
+
+		box_list = box.strip().split("\t")
+		box_out_list, box_field_list = join_box(box_list)
+
+		for each_tup in box_out_list:
+			field_name = each_tup[0]
+			if field_name not in field_dict:
+				field_dict[field_name] = 0
+			field_dict[field_name] += 1
+
+
+	sorted_x = sorted(field_dict.items(), key=operator.itemgetter(1), reverse=True)
+
+	print len(lines_box)
+	print sorted_x[:10]
+
+
+
 ####### create description for each domain
 def gen_sample_humans(in_box, in_summary, out_box, out_summary, sample_n):
 
@@ -1086,6 +1122,8 @@ def gen_sample_humans(in_box, in_summary, out_box, out_summary, sample_n):
 	out_b = open(out_box, "w")
 	out_s = open(out_summary, "w")
 
+	each_max = sample_n / 3
+
 
 	for line_box, line_summary in zip(box_lines, summary_lines):
 
@@ -1104,8 +1142,9 @@ def gen_sample_humans(in_box, in_summary, out_box, out_summary, sample_n):
 
 		this_name = this_box_dict["name"]
 
-		field_iter = ["birth_date", "occupation", "occupation", "occupation", "nationality"]
+		field_iter = ["birth_date", "occupation", "nationality"]
 		random.shuffle(field_iter)
+
 
 		for field_target in field_iter:
 
@@ -1114,9 +1153,9 @@ def gen_sample_humans(in_box, in_summary, out_box, out_summary, sample_n):
 
 				###
 				if field_target == "birth_date":
-					num_birth += 1
-					if num_birth > 35:
+					if num_birth > each_max:
 						continue
+					num_birth += 1
 					dice = random.randint(1, 10)
 					if dice < 7:
 						this_out_summary = this_name + " is born on " + this_field_value
@@ -1125,15 +1164,15 @@ def gen_sample_humans(in_box, in_summary, out_box, out_summary, sample_n):
 
 
 				elif field_target == "occupation":
-					num_occupation += 1
-					if num_occupation > 35:
+					if num_occupation > each_max:
 						continue
+					num_occupation += 1
 					this_out_summary = this_name + " is a " + this_field_value
 
 				elif field_target == "nationality":
-					num_nationality += 1
-					if num_nationality > 35:
+					if num_nationality > each_max:
 						continue
+					num_nationality += 1
 					dice = random.randint(1, 10)
 					if dice < 5:
 						this_out_summary = this_name + " is from " + this_field_value
@@ -1175,6 +1214,10 @@ def gen_sample_humans(in_box, in_summary, out_box, out_summary, sample_n):
 
 				break
 
+	print num_birth
+	print num_occupation
+	print num_nationality
+
 
 
 
@@ -1186,12 +1229,18 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 	## human: name + author, genre, publisher, publication_date, country
 	# classic: name is a country genre novel by author, published by publisher on publication_date
 
+	# top ones
+	## [('name', 12504), ('author', 11147), ('language', 10979), ('country', 10664), ('publication_date', 9843), 
+	# ('publisher', 9829), ('genre', 8969), ('media_type', 8800)
+
 	num_gen = 0
 	num_1 = 0
 	num_2 = 0
 	num_3 = 0
 	num_4 = 0
 	num_5 = 0
+	num_6 = 0
+	num_7 = 0
 
 	with open(in_box) as f:
 		box_lines = f.readlines()
@@ -1220,8 +1269,13 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 
 		this_name = this_box_dict["name"]
 
-		field_iter = ["author", "genre", "publisher", "publication_date", "country"]
+		if "-lrb-" in this_name:
+			continue
+
+		field_iter = ["author", "genre", "publisher", "publication_date", "country", "language", "media_type"]
 		random.shuffle(field_iter)
+
+		max_each = sample_n / 7
 
 		for field_target in field_iter:
 
@@ -1230,7 +1284,7 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 
 				###
 				if field_target == "author":
-					if num_1 > 20:
+					if num_1 > max_each:
 						continue
 					num_1 += 1
 					dice = random.randint(1, 10)
@@ -1246,7 +1300,7 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 
 				elif field_target == "genre":
 					if this_field_value.split()[-1] != "novel":
-						if num_2 > 20:
+						if num_2 > max_each:
 							continue
 						num_2 += 1
 						this_out_summary = this_name + " is a " + this_field_value + " novel"
@@ -1254,7 +1308,7 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 						continue
 
 				elif field_target == "publisher":
-					if num_3 > 20:
+					if num_3 > max_each:
 						continue
 					num_3 += 1
 					dice = random.randint(1, 10)
@@ -1264,7 +1318,7 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 						this_out_summary = this_name + " is a novel published by " + this_field_value
 
 				elif field_target == "publication_date":
-					if num_4 > 20:
+					if num_4 > max_each:
 						continue
 					num_4 += 1
 					dice = random.randint(1, 10)
@@ -1274,10 +1328,195 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 						this_out_summary = this_name + " is a " + this_field_value + " novel"
 
 				elif field_target == "country":
-					if num_5 > 20:
+					if num_5 > max_each:
 						continue
 					num_5 += 1
+					this_out_summary = this_name + " is by " + this_field_value + " author"
+
+				elif field_target == "language":
+					if num_6 > max_each:
+						continue
+					num_6 += 1
 					this_out_summary = this_name + " is a " + this_field_value + " novel"
+
+				elif field_target == "media_type":
+					if num_7 > max_each:
+						continue
+					num_7 += 1
+					dice = random.randint(1, 10)
+					if dice < 6:
+						this_out_summary = this_name + " is a " + this_field_value + " novel"
+					else:
+						this_out_summary = this_name + " is a novel in " + this_field_value
+
+
+				this_out_box = []
+
+				# this_out_summary += " ."
+
+				if len(this_name.split(" ")) < 2:
+					this_out_box.append("name:" + this_name)
+				else:
+					for ind, token in enumerate(this_name.split(" ")):
+						this_out_box.append("name_" + str(ind + 1) + ":" + token)
+
+				if len(this_field_value.split(" ")) < 2:
+					this_out_box.append(field_target + ":" + this_field_value)
+				else:
+					for ind, token in enumerate(this_field_value.split(" ")):
+						this_out_box.append(field_target + "_" + str(ind + 1) + ":" + token)
+
+
+				out_b.write("\t".join(this_out_box) + "\n")
+				out_s.write(this_out_summary + "\n")
+
+				print this_out_box
+				print this_out_summary
+
+				num_gen += 1
+
+				break
+
+
+
+
+	print num_1
+	print num_2
+	print num_3
+	print num_4
+	print num_5
+	print num_6
+	print num_7
+
+	out_b.close()
+	out_s.close()
+
+
+def gen_sample_songs(in_box, in_summary, out_box, out_summary, sample_n):
+
+
+	# top ones # plus single by, song by, album by
+	## [[('name', 25759), ('released', 24894), ('songwriters', 24369), ('label', 24362), ('length', 23228), 
+	# ('genre', 23183), ('single_by', 22381), ('from_album', 21953)
+
+
+	num_gen = 0
+	num_1 = 0
+	num_2 = 0
+	num_3 = 0
+	num_4 = 0
+	num_5 = 0
+	num_6 = 0
+	num_7 = 0
+
+	with open(in_box) as f:
+		box_lines = f.readlines()
+
+	with open(in_summary) as f:
+		summary_lines = f.readlines()
+
+	out_b = open(out_box, "w")
+	out_s = open(out_summary, "w")
+
+	each_max = sample_n / 7
+
+
+	for line_box, line_summary in zip(box_lines, summary_lines):
+
+		if num_gen >= sample_n:
+			break
+
+		box_list = line_box.strip().split("\t")
+		box_out_list, box_field_list = join_box(box_list)
+
+		this_box_dict = {}
+		for (this_name, this_value) in box_field_list:
+			this_box_dict[this_name] = this_value
+
+		if "name" not in this_box_dict:
+			continue
+
+		this_name = this_box_dict["name"]
+
+		if "-lrb-" in this_name:
+			continue
+
+		field_iter = ["single_by", "released", "songwriters", "label", "length", "genre", "from_album"]
+		random.shuffle(field_iter)
+
+		for field_target in field_iter:
+
+			if field_target in this_box_dict:
+				this_field_value = this_box_dict[field_target]
+
+				###
+				if field_target == "single_by":
+					if num_1 > each_max:
+						continue
+					num_1 += 1
+					dice = random.randint(1, 10)
+					if dice < 6:
+						this_out_summary = this_name + " is a song by " + this_field_value
+					elif dice < 8:
+						this_out_summary = this_name + " is a song performed by " + this_field_value
+					elif dice < 9:
+						this_out_summary = this_name + " is recorded by " + this_field_value
+					else:
+						this_out_summary = this_name + " is a song by singer " + this_field_value
+
+				elif field_target == "from_album":
+					if num_2 > each_max:
+						continue
+					num_2 += 1
+					dice = random.randint(1, 10)
+					if dice < 9:
+						this_out_summary = this_name + " is a song from the album " + this_field_value
+					else:
+						this_out_summary = this_name + " is a song on album " + this_field_value
+
+				elif field_target == "released":
+					if num_3 > each_max:
+						continue
+					num_3 += 1
+					dice = random.randint(1, 10)
+					this_field_value = this_field_value.split(" ")[-1]
+					if dice < 6:
+						this_out_summary = this_name + " is a song in " + this_field_value
+					elif dice < 9:
+						this_out_summary = this_name + " is a " + this_field_value + " song"
+					else:
+						this_out_summary = this_name + " is a song from " + this_field_value + " album"
+
+
+				elif field_target == "genre":
+					if num_4 > each_max:
+						continue
+					num_4 += 1
+					dice = random.randint(1, 10)
+					if dice < 6:
+						this_out_summary = this_name + " is a " + this_field_value + " song"
+					else:
+						this_out_summary = this_name + " is a song by " + this_field_value + " singer"
+
+
+				elif field_target == "songwriters":
+					if num_5 > each_max:
+						continue
+					num_5 += 1
+					this_out_summary = this_name + " is a song written by " + this_field_value
+
+				elif field_target == "label":
+					if num_6 > each_max:
+						continue
+					num_6 += 1
+					this_out_summary = this_name + " has the record label " + this_field_value
+
+				elif field_target == "length":
+					if num_7 > each_max:
+						continue
+					num_7 += 1
+					this_out_summary = this_name + " is " + this_field_value + " long"
+
 
 
 				this_out_box = []
@@ -1313,21 +1552,30 @@ def gen_sample_books(in_box, in_summary, out_box, out_summary, sample_n):
 	print num_3
 	print num_4
 	print num_5
+	print num_6
+	print num_7
 
 	out_b.close()
 	out_s.close()
 
+def gen_sample_films(in_box, in_summary, out_box, out_summary, sample_n):
 
-def gen_sample_humans_multi(in_box, in_summary, out_box, out_summary, sample_n):
 
-	## human: name + birth_date, occupation, nationality, genre?
-	# classic: name (born on ...) is a nationality occupation
+	# top ones # plus single by, song by, album by
+	## [('name', 24949), ('directed_by', 24062), ('release_date', 23695), ('language', 23343), 
+	# ('country', 23137), ('starring', 21946), ('genre', 21128), ('running_time', 19168), 
+
+	# ('produced_by', 18736), ('cinematography', 18059)]
+
 
 	num_gen = 0
-	num_birth = 0
-	num_occupation = 0
-	num_nationality = 0
-	num_genre = 0
+	num_1 = 0
+	num_2 = 0
+	num_3 = 0
+	num_4 = 0
+	num_5 = 0
+	num_6 = 0
+	num_7 = 0
 
 	with open(in_box) as f:
 		box_lines = f.readlines()
@@ -1337,6 +1585,8 @@ def gen_sample_humans_multi(in_box, in_summary, out_box, out_summary, sample_n):
 
 	out_b = open(out_box, "w")
 	out_s = open(out_summary, "w")
+
+	each_max = sample_n / 7
 
 
 	for line_box, line_summary in zip(box_lines, summary_lines):
@@ -1356,155 +1606,11 @@ def gen_sample_humans_multi(in_box, in_summary, out_box, out_summary, sample_n):
 
 		this_name = this_box_dict["name"]
 
-		field_iter = ["birth_date" , "occupation", "nationality"]
-		random.shuffle(field_iter)
-
-		out_box = []
-		this_out_summary = []
-
-		for field_target in field_iter:
-
-			if field_target in this_box_dict:
-				this_field_value = this_box_dict[field_target]
-
-				###
-				if field_target == "birth_date":
-					# num_birth += 1
-					# if num_birth > 35:
-					# 	continue
-					dice = random.randint(1, 10)
-					if dice < 7:
-						this_out_summary.append(this_name + " is born on " + this_field_value + " ")
-					else:
-						this_out_summary.append(this_name + " , born " + this_field_value + " ")
-
-
-				if field_target == "occupation":
-					# num_occupation += 1
-					# if num_occupation > 35:
-					# 	continue
-					this_out_summary.append(this_name + " is a " + this_field_value + " ")
-
-				if field_target == "nationality":
-					# num_nationality += 1
-					# if num_nationality > 35:
-					# 	continue
-					dice = random.randint(1, 10)
-					if dice < 5:
-						this_out_summary.append(this_name + " is from " + this_field_value + " ")
-					else:
-						this_out_summary.append(this_name + " is a " + this_field_value + " ")
-
-
-				# ### ?
-				# elif field_target == "genre":
-				# 	dice = random.randint(1, 10)
-				# 	if dice < 5:
-				# 		this_out_summary = this_name + " is from " + this_field_value + " ."
-				# 	else:
-				# 		this_out_summary = this_name + " is a " + this_field_value + " ."
-
-
-				this_out_box = []
-
-				if len(this_name.split(" ")) < 2:
-					this_out_box.append("name:" + this_name)
-				else:
-					for ind, token in enumerate(this_name.split(" ")):
-						this_out_box.append("name_" + str(ind + 1) + ":" + token)
-
-				if len(this_field_value.split(" ")) < 2:
-					this_out_box.append(field_target + ":" + this_field_value)
-				else:
-					for ind, token in enumerate(this_field_value.split(" ")):
-						this_out_box.append(field_target + "_" + str(ind + 1) + ":" + token)
-
-
-				out_box.append(this_out_box)
-
-
-		dice = random.randint(1, 10)
-		if dice < 5:
-			out_box = out_box[0:2]
-			this_out_summary = this_out_summary[0:2]
-		else:
-			out_box = out_box[0:3]
-			this_out_summary = this_out_summary[0:3]
-
-		# print out_box
-		# print this_out_summary
-
-
-		write_box = []
-		if len(this_out_summary) > 1:
-
-			print out_box
-			print this_out_summary
-
-			for each_utter_box in out_box:
-				write_box.extend(each_utter_box)
-
-			out_b.write("\t".join(write_box) + "\n")
-
-			for each_utter in this_out_summary:
-				out_s.write(each_utter)
-
-			out_s.write("\n")
-
-			num_gen += 1
-
-
-
-	print num_gen
-
-
-	out_b.close()
-	out_s.close()
-
-def gen_sample_books_multi(in_box, in_summary, out_box, out_summary, sample_n):
-
-	## human: name + author, genre, publisher, publication_date, country
-	# classic: name is a country genre novel by author, published by publisher on publication_date
-
-	num_gen = 0
-	# num_1 = 0
-	# num_2 = 0
-	# num_3 = 0
-	# num_4 = 0
-	# num_5 = 0
-
-	with open(in_box) as f:
-		box_lines = f.readlines()
-
-	with open(in_summary) as f:
-		summary_lines = f.readlines()
-
-	out_b = open(out_box, "w")
-	out_s = open(out_summary, "w")
-
-
-	for line_box, line_summary in zip(box_lines, summary_lines):
-
-		if num_gen >= sample_n:
-			break
-
-		box_list = line_box.strip().split("\t")
-		box_out_list, box_field_list = join_box(box_list)
-
-		this_box_dict = {}
-		for (this_name, this_value) in box_field_list:
-			this_box_dict[this_name] = this_value
-
-		if "name" not in this_box_dict:
+		if "-lrb-" in this_name:
 			continue
 
-		this_name = this_box_dict["name"]
-
-		field_iter = ["author", "genre", "publisher", "publication_date", "country"]
+		field_iter = ["directed_by", "release_date", "language", "country", "starring", "genre", "running_time"]
 		random.shuffle(field_iter)
-
-		this_out_summary = []
-		out_box = []
 
 		for field_target in field_iter:
 
@@ -1512,55 +1618,57 @@ def gen_sample_books_multi(in_box, in_summary, out_box, out_summary, sample_n):
 				this_field_value = this_box_dict[field_target]
 
 				###
-				if field_target == "author":
-					# if num_1 > 20:
-					# 	continue
-					# num_1 += 1
+				if field_target == "directed_by":
+					if num_1 > each_max:
+						continue
+					num_1 += 1
+					this_out_summary = this_name + " is a film directed by " + this_field_value
+
+				elif field_target == "release_date":
+					this_field_value = this_field_value.split()[-1]
+					if not this_field_value.isdigit():
+						continue
+					if num_2 > each_max:
+						continue
+					num_2 += 1
+					this_out_summary = this_name + " is a " + this_field_value + " film"
+
+				elif field_target == "language":
+					if num_3 > each_max:
+						continue
+					num_3 += 1
 					dice = random.randint(1, 10)
 					if dice < 6:
-						this_out_summary.append(this_name + " is a novel by " + this_field_value + " ")
-					elif dice < 8:
-						this_out_summary.append(this_name + " is a novel written by " + this_field_value + " ")
-					elif dice < 10:
-						this_out_summary.append(this_name + " is written by " + this_field_value + " ")
+						this_out_summary = this_name + " is a " + this_field_value + " film"
 					else:
-						this_out_summary.append(this_name + " is a novel authored by " + this_field_value + " ")
+						this_out_summary = this_name + " is a film in " + this_field_value
 
 
-				if field_target == "genre":
-					if this_field_value.split()[-1] != "novel":
-						# if num_2 > 20:
-						# 	continue
-						# num_2 += 1
-						this_out_summary.append(this_name + " is a " + this_field_value + " novel ")
-					else:
+				elif field_target == "country":
+					if num_4 > each_max:
 						continue
+					num_4 += 1
+					this_out_summary = this_name + " is a " + this_field_value + " film"
 
-				if field_target == "publisher":
-					# if num_3 > 20:
-					# 	continue
-					# num_3 += 1
-					dice = random.randint(1, 10)
-					if dice < 5:
-						this_out_summary.append(this_name + " is published by " + this_field_value + " ")
-					else:
-						this_out_summary.append(this_name + " is a novel published by " + this_field_value + " ")
 
-				if field_target == "publication_date":
-					# if num_4 > 20:
-					# 	continue
-					# num_4 += 1
-					dice = random.randint(1, 10)
-					if dice < 7:
-						this_out_summary.append(this_name + " is a novel published in " + this_field_value + " ")
-					else:
-						this_out_summary.append(this_name + " is a " + this_field_value + " novel ")
+				elif field_target == "starring":
+					if num_5 > each_max:
+						continue
+					num_5 += 1
+					this_out_summary = this_name + " is a film starring " + this_field_value
 
-				if field_target == "country":
-					# if num_5 > 20:
-					# 	continue
-					# num_5 += 1
-					this_out_summary.append(this_name + " is a " + this_field_value + " novel ")
+				elif field_target == "genre":
+					if num_6 > each_max:
+						continue
+					num_6 += 1
+					this_out_summary = this_name + " is a " + this_field_value + " film"
+
+				elif field_target == "running_time":
+					if num_7 > each_max:
+						continue
+					num_7 += 1
+					this_out_summary = this_name + " is " + this_field_value + " long"
+
 
 
 				this_out_box = []
@@ -1578,328 +1686,105 @@ def gen_sample_books_multi(in_box, in_summary, out_box, out_summary, sample_n):
 						this_out_box.append(field_target + "_" + str(ind + 1) + ":" + token)
 
 
-				out_box.append(this_out_box)
+				out_b.write("\t".join(this_out_box) + "\n")
+				out_s.write(this_out_summary + "\n")
 
-
-
-
-		dice = random.randint(1, 10)
-		if dice < 5:
-			out_box = out_box[0:2]
-			this_out_summary = this_out_summary[0:2]
-		else:
-			out_box = out_box[0:3]
-			this_out_summary = this_out_summary[0:3]
-
-		print out_box
-		print this_out_summary
-
-
-		write_box = []
-		if len(this_out_summary) > 1:
-			for each_utter_box in out_box:
-				write_box.extend(each_utter_box)
-
-			out_b.write("\t".join(write_box) + "\n")
-
-			for each_utter in this_out_summary:
-				out_s.write(each_utter)
-
-			out_s.write("\n")
-
-			num_gen += 1
-
-
-
-
-	# print num_1
-	# print num_2
-	# print num_3
-	# print num_4
-	# print num_5
-
-	out_b.close()
-	out_s.close()
-
-
-def gen_sample_humans_multi_real(in_box, in_summary, out_box, out_summary, sample_n):
-
-	## human: name + birth_date, occupation, nationality, genre?
-	# classic: name (born on ...) is a nationality occupation
-
-	num_gen = 0
-	num_birth = 0
-	num_occupation = 0
-	num_nationality = 0
-	num_genre = 0
-
-	with open(in_box) as f:
-		box_lines = f.readlines()
-
-	with open(in_summary) as f:
-		summary_lines = f.readlines()
-
-	out_b = open(out_box, "w")
-	out_s = open(out_summary, "w")
-
-
-	for line_box, line_summary in zip(box_lines, summary_lines):
-
-		if num_gen >= sample_n:
-			break
-
-		box_list = line_box.strip().split("\t")
-		box_out_list, box_field_list = join_box(box_list)
-
-		this_box_dict = {}
-		for (this_name, this_value) in box_field_list:
-			this_box_dict[this_name] = this_value
-
-		if "name" not in this_box_dict:
-			continue
-
-		this_name = this_box_dict["name"]
-
-		field_iter = ["birth_date" , "nationality", "occupation"]
-		# random.shuffle(field_iter)
-
-		out_box = []
-		res_dict = {}
-
-		for field_target in field_iter:
-
-			if field_target in this_box_dict:
-				this_field_value = this_box_dict[field_target]
-				res_dict[field_target] = this_field_value
-
-				this_out_box = []
-
-				if len(this_name.split(" ")) < 2:
-					this_out_box.append("name:" + this_name)
-				else:
-					for ind, token in enumerate(this_name.split(" ")):
-						this_out_box.append("name_" + str(ind + 1) + ":" + token)
-
-				if len(this_field_value.split(" ")) < 2:
-					this_out_box.append(field_target + ":" + this_field_value)
-				else:
-					for ind, token in enumerate(this_field_value.split(" ")):
-						this_out_box.append(field_target + "_" + str(ind + 1) + ":" + token)
-
-
-				out_box.append(this_out_box)
-
-
-		if len(res_dict) == 3:
-
-			this_out_summary = this_name + " -lrb- born " + res_dict["birth_date"] + " -rrb- is a " \
-								+ res_dict["nationality"] + " " + res_dict["occupation"] + " ."
-
-			# print out_box
-			# print this_out_summary
-
-
-			write_box = []
-			if len(this_out_summary) > 1:
-
-				print out_box
+				print this_out_box
 				print this_out_summary
-
-				for each_utter_box in out_box:
-					write_box.extend(each_utter_box)
-
-				out_b.write("\t".join(write_box) + "\n")
-
-				for each_utter in this_out_summary:
-					out_s.write(each_utter)
-
-				out_s.write("\n")
 
 				num_gen += 1
 
-
-
-	print num_gen
-
-
-	out_b.close()
-	out_s.close()
-
-def gen_sample_humans_block_real(in_box, in_summary, out_box, out_summary, sample_n):
-
-	## human: name + birth_date, occupation, nationality, genre?
-	# classic: name (born on ...) is a nationality occupation
-
-	num_gen = 0
-	num_birth = 0
-	num_occupation = 0
-	num_nationality = 0
-	num_genre = 0
-
-	with open(in_box) as f:
-		box_lines = f.readlines()
-
-	with open(in_summary) as f:
-		summary_lines = f.readlines()
-
-	out_b = open(out_box, "w")
-	out_s = open(out_summary, "w")
-
-
-	for line_box, line_summary in zip(box_lines, summary_lines):
-
-		if num_gen >= sample_n:
-			break
-
-		box_list = line_box.strip().split("\t")
-		box_out_list, box_field_list = join_box(box_list)
-
-		this_box_dict = {}
-		for (this_name, this_value) in box_field_list:
-			this_box_dict[this_name] = this_value
-
-		if "name" not in this_box_dict:
-			continue
-
-		this_name = this_box_dict["name"]
-
-		field_iter = ["birth_date" , "nationality", "occupation"]
-		# random.shuffle(field_iter)
-
-		out_box = []
-		this_out_summary = []
-		res_dict = {}
-
-
-		for field_target in field_iter:
-
-			if field_target in this_box_dict:
-				this_field_value = this_box_dict[field_target]
-				res_dict[field_target] = this_field_value
-
-				this_out_box = []
-
-				###
-				if field_target == "birth_date":
-					# num_birth += 1
-					# if num_birth > 35:
-					# 	continue
-					dice = random.randint(1, 10)
-					if dice < 7:
-						this_out_summary.append(this_name + " is born on " + this_field_value + " ")
-					else:
-						this_out_summary.append(this_name + " , born " + this_field_value + " ")
-
-
-				if field_target == "occupation":
-					# num_occupation += 1
-					# if num_occupation > 35:
-					# 	continue
-					this_out_summary.append(this_name + " is a " + this_field_value + " ")
-
-				if field_target == "nationality":
-					# num_nationality += 1
-					# if num_nationality > 35:
-					# 	continue
-					dice = random.randint(1, 10)
-					if dice < 5:
-						this_out_summary.append(this_name + " is from " + this_field_value + " ")
-					else:
-						this_out_summary.append(this_name + " is a " + this_field_value + " ")
-
-				if len(this_name.split(" ")) < 2:
-					this_out_box.append("name:" + this_name)
-				else:
-					for ind, token in enumerate(this_name.split(" ")):
-						this_out_box.append("name_" + str(ind + 1) + ":" + token)
-
-				if len(this_field_value.split(" ")) < 2:
-					this_out_box.append(field_target + ":" + this_field_value)
-				else:
-					for ind, token in enumerate(this_field_value.split(" ")):
-						this_out_box.append(field_target + "_" + str(ind + 1) + ":" + token)
-
-
-				out_box.append(this_out_box)
-
-
-		if len(res_dict) == 3:
-
-			this_target = this_name + " -lrb- born " + res_dict["birth_date"] + " -rrb- is a " \
-								+ res_dict["nationality"] + " " + res_dict["occupation"] + " ."
-
-			# print out_box
-			# print this_out_summary
-
-
-			write_box = []
-
-
-			print out_box
-			print this_out_summary
-			print this_target
-			print "\n"
-
-			# for each_utter_box in out_box:
-			# 	write_box.extend(each_utter_box)
-
-			# out_b.write("\t".join(write_box) + "\n")
-
-			for each_utter in this_out_summary:
-				out_b.write(each_utter)
-
-			out_b.write("\n")
-
-			num_gen += 1
+				break
 
 
 
-	print num_gen
 
+	print num_1
+	print num_2
+	print num_3
+	print num_4
+	print num_5
+	print num_6
+	print num_7
 
 	out_b.close()
 	out_s.close()
 
 
 
-### TODO: gen sample for songs, films
+
+def gen_bpe_data(box_in, summary_in, box_out, summary_out):
+	'''
+	convert original data to bpe
+	'''
+
+	with open(box_in) as f:
+		lines_box = f.readlines()
+
+	with open(summary_in) as f:
+		lines_summary = f.readlines()
+
+
+	for line in lines_summary:
+		line = line.strip()
+		enc = encoder.get_encoder("117M")
+		tokens = enc.encode(line)
+		print line
+		print tokens
+		print "\n"
+
+
+
+
+
+
+
+
+
+
 
 
 if __name__=='__main__':
 
+	box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data/test.box"
+	summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data/test.summary"
+	box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data_bpe/test.box"
+	summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data_bpe/test.summary"
+	gen_bpe_data(box_in, summary_in, box_out, summary_out)
+
+	# ### get field freq
+	# box_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.box"
+	# field_statistic(box_in)
 
 	# ### generate domain examples
-	# in_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data/train.box"
-	# in_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data/train.summary"
-	# out_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/humans_multi_real.box"
-	# out_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/humans_multi_real.summary"
+	# in_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.box"
+	# in_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.summary"
+	# out_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/films_200.box"
+	# out_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/films_200.summary"
 
-	# gen_sample_humans_multi_real(in_box, in_summary, out_box, out_summary, 100)
+	# gen_sample_films(in_box, in_summary, out_box, out_summary, 200)
 
-	## remove 3 in all original processed files
-	file_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/songs/test.summary.id"
-	file_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/songs_lines_invalid.txt"
-	get_line_oov(file_in, file_out)
+	# ## remove 3 in all original processed files
+	# file_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data/test.summary.id"
+	# file_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
+	# get_line_oov(file_in, file_out)
 
-	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data_withoov/test/"
-	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/test/"
+	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data_withoov/"
+	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data/"
 
-	# oov_line_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/test_lines_valid.txt"
+	# oov_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
 
 	# remove_oov(folder_in, folder_out, oov_line_in)
 
 
+	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data_withoov/"
+	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/"
 
-	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data_withoov/"
-	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/original_data_oov/"
-
-	# valid_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/humans_lines_invalid.txt"
-	# file_names = ["valid.summary", "valid.box"]
+	# valid_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
+	# file_names = ["test.summary", "test.box"]
 
 
 	# remove_oov_files(folder_in, folder_out, valid_line_in, file_names)
-
-
 
 
 	# ### generate mask

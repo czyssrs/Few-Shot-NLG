@@ -10,36 +10,23 @@ import time
 from SeqUnit import *
 from DataLoader import DataLoader
 import numpy as np
+import model as model_gpt
+from tqdm import tqdm
 ###
 # from PythonROUGE import PythonROUGE
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from preprocess import *
 from util import * 
 
-root_path = "../emb_pointer_copyloss_am/"
 
-### data
-tf.app.flags.DEFINE_string("dir", root_path + "processed_data", 'data set directory')
-tf.app.flags.DEFINE_string("seed_dir", root_path + "domain_descriptions_processed_data/", "domain seed dir")
-tf.app.flags.DEFINE_string("source_seed", "humans_single", "source seed dir")
-tf.app.flags.DEFINE_string("books_seed", "books_single", "target seed dir")
-
-tf.app.flags.DEFINE_string("songs_seed", "songs", "target seed dir")
-tf.app.flags.DEFINE_string("films_seed", "films", "target seed dir")
+tf.app.flags.DEFINE_string("gpt_model_name",'117M','model name of gpt2')
+tf.app.flags.DEFINE_string("domain",'humans','domain name')
 
 tf.app.flags.DEFINE_boolean("use_coverage", True,'use coverage or not')
 tf.app.flags.DEFINE_float("coverage_penalty", 1.0,'coverage loss penalty')
 
-tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
+tf.app.flags.DEFINE_boolean("use_copy_gate", False,'use copy gate or not')
 tf.app.flags.DEFINE_float("copy_gate_penalty", 0.1, 'copy gate loss penalty')
-
-tf.app.flags.DEFINE_integer("extend_vocab_size", 200,'extended vocabulary size for oov')
-
-tf.app.flags.DEFINE_float("rnet_penalty", 100.0, 'copy gate loss penalty')
-tf.app.flags.DEFINE_integer("seed_round", 200, "train seed batch every n round of source")
-tf.app.flags.DEFINE_integer("seed_epoch", 1, "train seed data for n epoch each time")
-
-
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
@@ -54,19 +41,19 @@ tf.app.flags.DEFINE_boolean("encoder_pos", True,'position information in field-g
 tf.app.flags.DEFINE_boolean("decoder_pos", True,'position information in dual attention decoder')
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
-tf.app.flags.DEFINE_integer("emb_size", 300, "Size of embedding.")
-tf.app.flags.DEFINE_integer("field_size", 300, "Size of embedding.")
+tf.app.flags.DEFINE_integer("emb_size", 768, "Size of embedding.") # embedding for gpt
+tf.app.flags.DEFINE_integer("field_size", 768, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
 tf.app.flags.DEFINE_integer("epoch", 500, "Number of training epoch.")
-tf.app.flags.DEFINE_integer("source_vocab", 5420,'vocabulary size')
-tf.app.flags.DEFINE_integer("field_vocab", 2759,'vocabulary size')
+tf.app.flags.DEFINE_integer("source_vocab", 50257,'vocabulary size')
+tf.app.flags.DEFINE_integer("field_vocab", 2756,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
-tf.app.flags.DEFINE_integer("target_vocab", 5420,'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 1000,'report valid results after some steps')
+tf.app.flags.DEFINE_integer("target_vocab", 50257,'vocabulary size')
+tf.app.flags.DEFINE_integer("report", 50,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
-tf.app.flags.DEFINE_integer("report_loss", 100,'report loss results after some steps')
+tf.app.flags.DEFINE_integer("report_loss", 10,'report loss results after some steps')
 
 FLAGS = tf.app.flags.FLAGS
 last_best = 0.0
@@ -78,26 +65,28 @@ model_dir = sys.argv[1]
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
 ###
-# root_path = "/scratch/home/zhiyu/wiki2bio/"
-# root_path = "../"
-root_path = "../emb_pointer_copyloss_am/"
-gold_path_valid = root_path + 'original_data/valid.summary'
-gold_path_test = root_path + 'original_data/test.summary'
+root_path = "../few_shot_gpt-2/"
+gold_path_valid = root_path + FLAGS.domain + '/original_data_original/valid.summary'
+gold_path_test = root_path + FLAGS.domain + '/original_data_original/test.summary'
 
 field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
 vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
 word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
+processed_data_dir = root_path + FLAGS.domain + "/processed_data"
 
-### vocab for test. in preprocess.py
-v = Vocab(vocab_file, field_vocab_file)
+### bpe vocab
+enc = encoder.get_encoder("117M")
+# "<|endoftext|>": 50256
+eos = 50256
+
 
 # test phase
 #### need to change!!!
-if FLAGS.load != "0":
-    save_dir = root_path + 'results/res/' + model_dir + '/loads/' + FLAGS.load + '/'
-    save_file_dir = root_path + 'results/res/' + model_dir + '/' + 'files/'
-    pred_dir = root_path + 'results/evaluation/' + model_dir + '/' + FLAGS.load + '/'
+if FLAGS.mode == "test":
+    save_dir = root_path + FLAGS.domain +'/results/res/' + model_dir + '/loads/' + FLAGS.load + '/'
+    save_file_dir = root_path + FLAGS.domain +'/results/res/' + model_dir + '/' + 'files/'
+    pred_dir = root_path + FLAGS.domain +'/results/evaluation/' + model_dir + '/' + FLAGS.load + '/'
     if not os.path.exists(pred_dir):
         os.mkdir(pred_dir)
     if not os.path.exists(save_file_dir):
@@ -106,12 +95,11 @@ if FLAGS.load != "0":
     pred_beam_path = pred_dir + 'beam_summary_'
 # train phase
 else:
-    # prefix = str(int(time.time() * 1000))
-    os.mkdir(root_path + 'results/res/' + model_dir)
-    os.mkdir(root_path + 'results/evaluation/' + model_dir)
-    save_dir = root_path + 'results/res/' + model_dir + '/'
+    os.mkdir(root_path + FLAGS.domain +'/results/res/' + model_dir)
+    os.mkdir(root_path + FLAGS.domain +'/results/evaluation/' + model_dir)
+    save_dir = root_path + FLAGS.domain +'/results/res/' + model_dir + '/'
     save_file_dir = save_dir + 'files/'
-    pred_dir = root_path + 'results/evaluation/' + model_dir + '/'
+    pred_dir = root_path + FLAGS.domain +'/results/evaluation/' + model_dir + '/'
     if not os.path.exists(pred_dir):
         os.mkdir(pred_dir)
     if not os.path.exists(save_file_dir):
@@ -124,90 +112,52 @@ log_file = save_dir + 'log.txt'
 
 def train(sess, dataloader, model):
     write_log("#######################################################")
-    for flag in FLAGS.__flags:
-        write_log(flag + " = " + str(FLAGS.__flags[flag]))
+    # print (FLAGS.flag_values_dict())
+    for attr in FLAGS.flag_values_dict():
+        value = FLAGS.flag_values_dict()[attr]
+        write_log(attr + " = " + str(value))
     write_log("#######################################################")
 
     trainset = dataloader.train_set
-    seedset = dataloader.seed_set
-    oov_list = dataloader.train_oov_list
-    oov_list_seed = dataloader.seed_oov_list
 
     k = 0
     record_k = 0
     loss, start_time = 0.0, time.time()
     record_loss = 0.0
-    record_mse_loss = 0.0
     record_copy_loss = 0.0
-    record_seed_loss = 0.0
     record_cov_loss = 0.0
 
     for _ in range(FLAGS.epoch):
-        for x in dataloader.batch_iter(trainset, oov_list, FLAGS.batch_size, True, 0):
-            this_loss, this_mseloss, this_copy_gate_loss, this_cov_loss = model(x, sess, 0)
+        for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True, domain=FLAGS.domain):
+            this_loss, this_copy_gate_loss, this_cov_loss = model(x, sess)
             loss += this_loss
             record_loss += this_loss
-            record_mse_loss += this_mseloss
             record_copy_loss += this_copy_gate_loss
             record_cov_loss += this_cov_loss
             k += 1
             record_k += 1
             progress_bar(k % FLAGS.report, FLAGS.report)
 
-            # ksave_dir = save_model(model, save_dir, k // FLAGS.report)
-            # write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
+            # ksave_dir = save_model(model, sess, save_dir, k // FLAGS.report)
+            # write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
 
             if (record_k % FLAGS.report_loss == 0):
-                write_log("%d : loss = %.3f, mseloss = %.3f, copyloss = %.3f, covloss = %.3f" % \
-                    (k, record_loss / record_k, record_mse_loss / record_k, record_copy_loss / record_k, record_cov_loss / record_k))
+                write_log("%d : loss = %.3f, copyloss = %.3f, covloss = %.3f" % \
+                    (k, record_loss / record_k, record_copy_loss / record_k, record_cov_loss / record_k))
                 record_k = 0
                 record_loss = 0.0
-                record_mse_loss = 0.0
                 record_copy_loss = 0.0
                 record_cov_loss = 0.0
 
 
-            ### train seed
-            if k % FLAGS.seed_round == 0:
-                loss_rnet = 0.0
-                mse_loss_rnet = 0.0
-                copy_loss_rnet = 0.0
-                cov_loss_rnet = 0.0
-                for _ in range(FLAGS.seed_epoch):
-                    for x in dataloader.batch_iter(seedset, oov_list_seed, FLAGS.batch_size, True, 1):
-                        this_loss_rnet, this_mseloss_rnet, this_copy_gate_loss_rnet, this_cov_loss_rnet = model(x, sess, 1)
-                        loss_rnet += this_loss_rnet
-                        mse_loss_rnet += this_mseloss_rnet
-                        copy_loss_rnet += this_copy_gate_loss_rnet
-                        cov_loss_rnet += this_cov_loss_rnet
-
-                write_log("%d R net: loss = %.3f, mseloss = %.3f, copyloss = %.3f, covloss = %.3f" % \
-                    (k, loss_rnet / FLAGS.seed_epoch, mse_loss_rnet / FLAGS.seed_epoch, copy_loss_rnet / FLAGS.seed_epoch, cov_loss_rnet / FLAGS.seed_epoch))
-
-
-            # if k % FLAGS.seed_round == 0:
-            #     loss_rnet = 0.0
-            #     mse_loss_rnet = 0.0
-            #     copy_loss_rnet = 0.0
-            #     for _ in range(FLAGS.seed_epoch):
-            #         x = dataloader.get_one_batch(seedset, oov_list_seed, FLAGS.batch_size, 1)
-            #         this_loss_rnet, this_mseloss_rnet, this_copy_gate_loss_rnet = model(x, sess, 1)
-            #         loss_rnet += this_loss_rnet
-            #         mse_loss_rnet += this_mseloss_rnet
-            #         copy_loss_rnet += this_copy_gate_loss_rnet
-
-            #     write_log("%d R net: loss = %.3f, mseloss = %.3f, copyloss = %.3f" % \
-            #         (k, loss_rnet / FLAGS.seed_epoch, mse_loss_rnet / FLAGS.seed_epoch, copy_loss_rnet / FLAGS.seed_epoch))
-
-
             if (k % FLAGS.report == 0):
-                print "Round: ", k / FLAGS.report
+                print ("Round: ", k / FLAGS.report)
                 cost_time = time.time() - start_time
                 write_log("%d : loss = %.3f, time = %.3f " % (k // FLAGS.report, loss, cost_time))
                 loss, start_time = 0.0, time.time()
                 if k // FLAGS.report >= 1: 
-                    ksave_dir = save_model(model, save_dir, k // FLAGS.report)
-                    write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
+                    ksave_dir = save_model(model, sess, save_dir, k // FLAGS.report)
+                    # write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
                     write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
                     
 
@@ -215,192 +165,71 @@ def train(sess, dataloader, model):
 def test(sess, dataloader, model):
     evaluate(sess, dataloader, model, save_dir, 'test')
 
-def save_model(model, save_dir, cnt):
+def save_model(model, sess, save_dir, cnt):
     new_dir = save_dir + 'loads' + '/' 
     if not os.path.exists(new_dir):
         os.mkdir(new_dir)
     nnew_dir = new_dir + str(cnt) + '/'
     if not os.path.exists(nnew_dir):
         os.mkdir(nnew_dir)
-    model.save(nnew_dir)
+    model.save(nnew_dir, sess)
     return nnew_dir
-
-
-def evaluate_old(sess, dataloader, model, ksave_dir, mode='valid'):
-    '''
-    original eva fn. with post processing to replace unk
-    '''
-
-    if mode == 'valid':
-        texts_path = FLAGS.dir + "/valid/valid.box.val"
-        gold_path = gold_path_valid
-        evalset = dataloader.dev_set
-    else:
-        texts_path = FLAGS.dir + "/test/test.box.val"
-        gold_path = gold_path_test
-        evalset = dataloader.test_set
-    
-    # for copy words from the infoboxes
-    texts = open(texts_path, 'r').read().strip().split('\n')
-    texts = [list(t.strip().split()) for t in texts]
-    v = Vocab()
-
-    # with copy
-    pred_list, pred_list_copy, gold_list = [], [], []
-    pred_unk, pred_mask = [], []
-    
-    k = 0
-    for x in dataloader.batch_iter(evalset, FLAGS.batch_size, False):
-        predictions, atts = model.generate(x, sess)
-        atts = np.squeeze(atts)
-        idx = 0
-        for summary in np.array(predictions):
-            with open(pred_path + str(k), 'w') as sw:
-                summary = list(summary)
-                if 2 in summary:
-                    summary = summary[:summary.index(2)] if summary[0] != 2 else [2]
-                real_sum, unk_sum, mask_sum = [], [], []
-                for tk, tid in enumerate(summary):
-                    if tid == 3:
-                        sub = texts[k][np.argmax(atts[tk,: len(texts[k]),idx])]
-                        real_sum.append(sub)
-                        mask_sum.append("**" + str(sub) + "**")
-                    else:
-                        real_sum.append(v.id2word(tid))
-                        mask_sum.append(v.id2word(tid))
-                    unk_sum.append(v.id2word(tid))
-                sw.write(" ".join([str(x) for x in real_sum]) + '\n')
-                pred_list.append([str(x) for x in real_sum])
-                pred_unk.append([str(x) for x in unk_sum])
-                pred_mask.append([str(x) for x in mask_sum])
-                k += 1
-                idx += 1
-
-    write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
-    write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
-    write_word(pred_list, ksave_dir, mode + "_summary_copy.clean.txt")
-
-
-    ### new bleu
-    # print ksave_dir + mode + "_summary_unk.txt"
-    bleu_unk = bleu_score(gold_path, ksave_dir + mode + "_summary_unk.txt")
-    nocopy_result = "without copy BLEU: %.4f\n" % bleu_unk
-    bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary_copy.clean.txt")
-    copy_result = "with copy BLEU: %.4f\n" % bleu_copy
-
-
-    # ### old bleu. too slow
-    # for tk in range(k):
-    #     with open(gold_path + str(tk), 'r') as g:
-    #         gold_list.append([g.read().strip().split()])
-
-    # gold_set = [[gold_path + str(i)] for i in range(k)]
-    # pred_set = [pred_path + str(i) for i in range(k)]
-
-    # # recall, precision, F_measure = PythonROUGE(pred_set, gold_set, ngram_order=4)
-    # # bleu = corpus_bleu(gold_list, pred_list)
-    # # copy_result = "with copy F_measure: %s Recall: %s Precision: %s BLEU: %s\n" % \
-    # # (str(F_measure), str(recall), str(precision), str(bleu))
-    # # print copy_result
-
-    # bleu = corpus_bleu(gold_list, pred_list)
-    # copy_result = "with copy BLEU: %s\n" % (str(bleu))
-    # #print copy_result
-
-    # for tk in range(k):
-    #     with open(pred_path + str(tk), 'w') as sw:
-    #         sw.write(" ".join(pred_unk[tk]) + '\n')
-
-    # # recall, precision, F_measure = PythonROUGE(pred_set, gold_set, ngram_order=4)
-    # # bleu = corpus_bleu(gold_list, pred_unk)
-    # # nocopy_result = "without copy F_measure: %s Recall: %s Precision: %s BLEU: %s\n" % \
-    # # (str(F_measure), str(recall), str(precision), str(bleu))
-    # # print nocopy_result
-
-    # bleu = corpus_bleu(gold_list, pred_unk)
-    # nocopy_result = "without copy BLEU: %s\n" % (str(bleu))
-    #print nocopy_result
-
-    result = copy_result + nocopy_result 
-    print result
-    # if mode == 'valid':
-    #     print result
-
-    return result
 
 
 def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     if mode == 'valid':
-        texts_path = FLAGS.dir + "/valid/valid.box.val"
+        texts_path = processed_data_dir + "/valid/valid.box.val"
         gold_path = gold_path_valid
         evalset = dataloader.dev_set
-        oov_list = dataloader.dev_oov_list
     else:
-        texts_path = FLAGS.dir + "/test/test.box.val"
+        texts_path = processed_data_dir + "/test/test.box.val"
         gold_path = gold_path_test
         evalset = dataloader.test_set
-        oov_list = dataloader.test_oov_list
-    
-    # for copy words from the infoboxes
-    texts = open(texts_path, 'r').read().strip().split('\n')
-    texts = [list(t.strip().split()) for t in texts]
 
-    # with copy
-    pred_list, pred_list_copy, gold_list = [], [], []
-    pred_unk, pred_mask = [], []
+    pred_list = []
+    pred_unk = []
+
+    out_bpe = open(ksave_dir + mode + "_summary_bpe.txt", "w")
+    out_real = open(ksave_dir + mode + "_summary.clean.txt", "w")
     
     k = 0
-    for x in dataloader.batch_iter(evalset, oov_list, FLAGS.batch_size, False, 0):
+    for x in tqdm(dataloader.batch_iter(evalset, FLAGS.batch_size, False, domain=FLAGS.domain)):
         predictions, atts = model.generate(x, sess)
-        this_oov_list = x['oov_map']
-        atts = np.squeeze(atts)
-        idx = 0
-        for summary, oov_dict in zip(np.array(predictions), this_oov_list):
+        # atts = np.squeeze(atts)
+        for summary in np.array(predictions):
             with open(pred_path + str(k), 'w') as sw:
                 summary = list(summary)
-                if 2 in summary:
-                    summary = summary[:summary.index(2)] if summary[0] != 2 else [2]
-                real_sum, unk_sum, mask_sum = [], [], []
-                for tk, tid in enumerate(summary):
-                    if tid >= FLAGS.target_vocab:
-                        unk_sum.append("<_UNK_TOKEN_COPY>")
-                        if tid in oov_dict:
-                            real_sum.append(oov_dict[tid])
-                        else:
-                            real_sum.append("<_UNK_TOKEN_WRONG>")
-                    elif tid == 3:
-                        unk_sum.append("<_UNK_TOKEN_OOV>")
-                        sub = texts[k][np.argmax(atts[tk,: len(texts[k]),idx])]
-                        real_sum.append(sub)
-                    else:
-                        real_sum.append(v.id2word(tid))
-                        unk_sum.append(v.id2word(tid))
+                # print len(summary)
+                if eos in summary:
+                    summary = summary[:summary.index(eos)] if summary[0] != eos else [eos]
+                real_sum = enc.decode(summary)
+                bpe_sum = " ".join([enc.decoder[tmp] for tmp in summary])
+                
+                sw.write(real_sum + '\n')
+                pred_list.append(real_sum)
+                pred_unk.append(bpe_sum)
 
+                out_real.write(real_sum + '\n')
+                out_bpe.write(bpe_sum + '\n')
 
-                sw.write(" ".join([str(x) for x in real_sum]) + '\n')
-                pred_list.append([str(x) for x in real_sum])
-                pred_unk.append([str(x) for x in unk_sum])
-                # pred_mask.append([str(x) for x in mask_sum])
+                # print (real_sum)
                 k += 1
-                idx += 1
 
-    # write_word(pred_mask, ksave_dir, mode + "_summary_copy.txt")
-    write_word(pred_unk, ksave_dir, mode + "_summary_unk.txt")
-    write_word(pred_list, ksave_dir, mode + "_summary_copy.clean.txt")
-
+    # write_word(pred_unk, ksave_dir, mode + "_summary_bpe.txt")
+    # write_word(pred_list, ksave_dir, mode + "_summary.clean.txt")
+    out_bpe.close()
+    out_real.close()
 
     ### new bleu
-    bleu_unk = bleu_score(gold_path, ksave_dir + mode + "_summary_unk.txt")
-    nocopy_result = "without copy BLEU: %.4f\n" % bleu_unk
-    bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary_copy.clean.txt")
+    bleu_copy = bleu_score(gold_path, ksave_dir + mode + "_summary.clean.txt")
     copy_result = "with copy BLEU: %.4f\n" % bleu_copy
 
-    result = copy_result + nocopy_result 
+    result = copy_result 
 
     return result
 
 def write_log(s):
-    print s
+    print (s)
     with open(log_file, 'a') as f:
         f.write(s+'\n')
 
@@ -408,15 +237,14 @@ def write_log(s):
 def main():
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
-    with tf.Session(config=config) as sess:
+    with tf.Session(config=config, graph=tf.Graph()) as sess:
         copy_file(save_file_dir)
 
-        init_word_emb = create_init_embedding(vocab_file, FLAGS.extend_vocab_size, word2vec_file, 300)
-        assert len(init_word_emb) == (FLAGS.source_vocab + FLAGS.extend_vocab_size)
+        hparams = model_gpt.default_hparams()
+        with open(os.path.join('../models', FLAGS.gpt_model_name, 'hparams.json')) as f:
+            hparams.override_from_dict(json.load(f))
 
-        # init_word_emb = None
-
-        dataloader = DataLoader(FLAGS.dir, FLAGS.seed_dir, FLAGS.source_seed, FLAGS.books_seed, FLAGS.songs_seed, FLAGS.films_seed, FLAGS.limits)
+        dataloader = DataLoader(processed_data_dir, FLAGS.limits, eos)
         field_id2word = dataloader.fieldid2word
 
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size, emb_size=FLAGS.emb_size,
@@ -427,18 +255,42 @@ def main():
                         fgate_enc=FLAGS.fgate_encoder, dual_att=FLAGS.dual_attention, decoder_add_pos=FLAGS.decoder_pos,
                         encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
                         use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty,
-                        init_word_embedding = init_word_emb, extend_vocab_size=FLAGS.extend_vocab_size,
-                        fieldid2word = field_id2word, use_glove=True, copy_gate_penalty=FLAGS.copy_gate_penalty,
-                        use_copy_gate=FLAGS.use_copy_gate, rnet_penalty=FLAGS.rnet_penalty)
+                        fieldid2word = field_id2word, copy_gate_penalty=FLAGS.copy_gate_penalty,
+                        use_copy_gate=FLAGS.use_copy_gate, gpt_hparams=hparams)
 
-        sess.run(tf.global_variables_initializer())
-        # copy_file(save_file_dir)
-        if FLAGS.load != '0':
-            model.load(save_dir)
+
         if FLAGS.mode == 'train':
+            ### load pretrained gpt
+            gpt_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='model')
+
+            # gpt_var_opt = []
+            # for each_var in gpt_var:
+            #     if "Adam" in each_var.name:
+            #         gpt_var_opt.append(each_var)
+
+            gpt_var_load = []
+            for each_var in gpt_var:
+                if "Adam" not in each_var.name:
+                    gpt_var_load.append(each_var)
+
+
+            # print ([tmp.name for tmp in gpt_var_load])
+            saver = tf.train.Saver(var_list=gpt_var_load)
+            ckpt = tf.train.latest_checkpoint(os.path.join('../models', FLAGS.gpt_model_name))
+            saver.restore(sess, ckpt)
+
+            # ### init other vars
+            seq2seq_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='seq2seq')
+            # print ([tmp.name for tmp in seq2seq_var])
+            # seq2seq_var += gpt_var_opt
+
+            sess.run(tf.variables_initializer(var_list=seq2seq_var))
+
             train(sess, dataloader, model)
+
         else:
-            test(sess, dataloader, model)
+            model.load(model_path, sess)
+            write_log(test(sess, dataloader, model))
 
 
 if __name__=='__main__':

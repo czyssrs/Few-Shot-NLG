@@ -595,11 +595,11 @@ def table2id(domain):
         fi.close()
         fo.close()
 
-    # ### write field to word mapping
-    # field2word_file = root_path + domain + "/processed_data/field2word.txt"
-    # with open(field2word_file, "w") as f:
-    #     for each_id in vocab._keyid2wordlist:
-    #         f.write(str(each_id) + "\t" + " ".join([str(tmp) for tmp in vocab._keyid2wordlist[each_id]]) + "\n")
+    ### write field to word mapping
+    field2word_file = root_path + domain + "/processed_data/field2word.txt"
+    with open(field2word_file, "w") as f:
+        for each_id in vocab._keyid2wordlist:
+            f.write(str(each_id) + "\t" + " ".join([str(tmp) for tmp in vocab._keyid2wordlist[each_id]]) + "\n")
 
 
     ### gen field, pos for decoder

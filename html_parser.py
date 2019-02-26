@@ -5,17 +5,18 @@ import urllib2
 import re
 import corenlp
 import time
+import Queue
 from tqdm import tqdm
 from BeautifulSoup import BeautifulSoup, NavigableString, Tag
 
-raw_dest_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/raw/books/"
+raw_dest_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/raw/films/"
 wiki_root = "https://en.wikipedia.org"
 
 
-out_box = "/scratch/home/zhiyu/wiki2bio/crawled_data/books.box"
-out_summary = "/scratch/home/zhiyu/wiki2bio/crawled_data/books.summary"
+out_box = "/scratch/home/zhiyu/wiki2bio/crawled_data/films.box"
+out_summary = "/scratch/home/zhiyu/wiki2bio/crawled_data/films.summary"
 
-out_raw = "/scratch/home/zhiyu/wiki2bio/crawled_data/books.raw.txt"
+out_raw = "/scratch/home/zhiyu/wiki2bio/crawled_data/films.raw.txt"
 
 
 ############
@@ -176,6 +177,45 @@ def gen_data(source_path, out_file):
 							tmp = item.findAll('tr')
 							if len(tmp) > 0:
 								for each_row in tmp:
+
+									### headline for songs
+									field = ""
+									value = ""
+									headline = each_row.find('th', attrs={'class': 'description'})
+									if headline != None:
+
+										headline = text_cleaner(headline).lower()
+										if "single by" in headline:
+											field = "single_by"
+											value = headline.split("by")[-1].strip()
+
+										if "song by" in headline:
+											field = "song_by"
+											value = headline.split("by")[-1].strip()
+
+										if "album by" in headline:
+											field = "album_by"
+											value = headline.split("by")[-1].strip()
+
+										if "from album" in headline or "from the album" in headline:
+											field = "from_album"
+											value = headline.split("album")[-1].strip()
+
+
+										if field != "" and value != "":
+											# print headline
+											# print field
+											# print value
+											# print "\n"
+
+											infobox_list.append(field.replace(" ", "_").replace(":", "_") + ":" + value.replace(" ", "_").replace(":", "_"))
+
+
+										continue
+
+
+
+
 									# print each_row
 									field = each_row.find('th')
 									value = each_row.find('td')
@@ -187,6 +227,9 @@ def gen_data(source_path, out_file):
 
 					if len(infobox_list) > 1:
 						num_recorded += 1
+						# print " ".join(infobox_list).encode('utf-8') + "\t"
+						# print "\n"
+						# print cleanbio.encode('utf-8').replace("\t", " ").replace("\n", " ") + "\n"
 						output_file.write(" ".join(infobox_list).encode('utf-8') + "\t")
 						output_file.write(cleanbio.encode('utf-8').replace("\t", " ").replace("\n", " ") + "\n")
 
@@ -229,6 +272,8 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 
 	client = corenlp.client.CoreNLPClient(annotators="tokenize ssplit".split())
 
+	dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
+
 	# text = "I help a (test) ."
 	# ann = client.annotate(text)
 	# sentence = ann.sentence[0]
@@ -246,7 +291,7 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 				line = line.decode('utf-8')
 				line_list = line.strip("\n").split("\t")
 				field_list = line_list[0].strip().split(" ")
-				summary = line_list[1]
+				summary = line_list[1].strip()
 
 				if summary[-1] != ".":
 					summary += " ."
@@ -256,10 +301,12 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 				sentence = ann.sentence[0]
 				summary = " ".join([token.word for token in sentence.token]).lower()
 
+
 				field_value_emit_list = []
 
 				invalid_flag = 0
 				valid_flag = 0
+				has_genre = 0
 
 				for each_field in field_list:
 
@@ -297,10 +344,21 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 
 						##### constraints list here: 
 						### for books
+						# if field_name == "name":
+						# 	field_value = field_value.replace(" -lrb- novel -rrb-", "")
+						# if field_name == "genre":
+						# 	field_value = field_value.replace(" novel", "")
+
+
+						### for songs and films. remove paranthese
 						if field_name == "name":
-							field_value = field_value.replace(" -lrb- novel -rrb-", "")
-						if field_name == "genre":
-							field_value = field_value.replace(" novel", "")
+							if "-lrb-" in field_value and "-rrb-" in field_value:
+								to_remove = field_value.split("-lrb-")[-1].split("-rrb-")[0].strip()
+
+								to_remove = " -lrb- " + to_remove + " -rrb-"
+
+								field_value = field_value.replace(to_remove, "").strip()
+
 
 
 						fv_list = field_value.split(" ")
@@ -310,6 +368,70 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 							emit_seg = field_name + "_" + str(ind + 1) + ":" + fv_seg
 							field_value_emit_list.append(emit_seg)
 
+
+						if field_name == "genre":
+							has_genre = 1
+
+
+				# ### for songs
+				# if summary[0] == "`":
+				# 	summary = summary[3:]
+				# 	sum_list = summary.split("''")
+				# 	if len(sum_list) > 1:
+				# 		summary = sum_list[0].strip() + "''".join(sum_list[1:])
+
+				# ### for songs exclude sinjgles and album
+				# if "song" not in summary:
+				# 	continue
+
+
+				### for films
+
+				if "film" not in summary:
+					continue
+
+
+				if has_genre == 0:
+
+					### parse sentence to find genre
+					this_pattern = re.compile('is an? (.*) film')
+					genre_match = re.search(this_pattern, summary)
+
+					if genre_match != None:
+
+						matched = genre_match.group(1)
+
+						res_genre = []
+						for token in matched.split():
+							if (not token.isdigit()) and (token not in dem_map):
+								res_genre.append(token)
+
+						# print summary
+						# print res_genre
+						# print "\n"
+
+						if len(res_genre) > 0 and len(res_genre) < 6:
+
+							### add genre to box
+							for ind, fv_seg in enumerate(res_genre):
+
+								emit_seg = "genre_" + str(ind + 1) + ":" + fv_seg
+								field_value_emit_list.append(emit_seg)
+
+
+					else:
+
+						field_value_emit_list.append("genre:<none>")
+
+
+
+
+
+
+
+				# print field_value_emit_list
+				# print summary
+				# print "\n"
 
 				### threshold here?
 				if len(field_value_emit_list) > 1 and invalid_flag == 0:
@@ -336,7 +458,43 @@ def tokenize_and_filter(file_in, out_box, out_summary):
 
 
 
+def load_dem_map(file_in):
+	'''
+	recursively load nationality map
+	'''
+	dem_map = {}
+	with open(file_in) as f:
+		for line in f:
+			line_list = line.strip().lower().split(",")
+			if line_list[0] not in dem_map:
+				dem_map[line_list[0]] = []
+			if line_list[1] not in dem_map[line_list[0]]:
+				dem_map[line_list[0]].append(line_list[1])
 
+			if line_list[1] not in dem_map:
+				dem_map[line_list[1]] = []
+			if line_list[0] not in dem_map[line_list[1]]:
+				dem_map[line_list[1]].append(line_list[0])
+
+	final_res_map = {}
+	for each_con in dem_map:
+		res_con = []
+		q = Queue.Queue()
+		q.put(each_con)
+
+		while not q.empty():
+			con = q.get()
+			if con in res_con:
+				continue
+
+			res_con.append(con)
+			if con in dem_map:
+				for each_sub in dem_map[con]:
+					q.put(each_sub)
+
+		final_res_map[each_con] = res_con
+
+	return final_res_map
 
 
 
@@ -349,6 +507,8 @@ if __name__=='__main__':
 	#root_page = "https://en.wikipedia.org/wiki/Category:Universities_and_colleges_by_country"
 	#root_page = "https://en.wikipedia.org/wiki/Category:Books_by_country"
 	# root_page = "https://en.wikipedia.org/wiki/Category:Films_by_country"
+
+	# root_page = "https://en.wikipedia.org/wiki/Category:Video_games_by_country_of_developer"
 	# retrieved = get_all_pages(root_page, raw_dest_path)
 	# print retrieved
 
