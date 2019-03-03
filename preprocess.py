@@ -36,9 +36,7 @@ def join_box(list_in):
         field_value = each_item.split(":")[1]
 
         if field_name == "":
-            field_name = '<_PAD>'
-        if field_value == "":
-            field_value = "<none>"
+            continue
 
         if not field_name[-1].isdigit():
             if field_value != "<none>":
@@ -49,7 +47,7 @@ def join_box(list_in):
 
         if field_name != current_name:
             if current_name != "":
-                # cur_name_list = [tup[0] for tup in out_list]
+                cur_name_list = [tup[0] for tup in out_list]
                 # print out_list
                 # print field_name
                 # assert field_name not in cur_name_list
@@ -68,6 +66,8 @@ def join_box(list_in):
         out_list.append((current_name, current_value.strip()))
 
     sorted_by_second = sorted(out_list, key=lambda tup: len(tup[1].split(" ")), reverse=True)
+
+    # random_out = random.shuffle(sorted_by_second)
 
     return out_list, sorted_by_second
 
@@ -122,8 +122,8 @@ def fuzzy_match_rep(source, substring, field_name):
     this_value_list = []
     for token in this_value_list_raw:
         if not(token in string.punctuation) \
-            and token != "-lrb-" \
-            and token != "-rrb-" \
+            and token != "(" \
+            and token != ")" \
             and token != "-lsb-" \
             and token != "-rsb-":
             this_value_list.append(token)
@@ -149,8 +149,8 @@ def fuzzy_match_rep(source, substring, field_name):
     # print max_index
 
 
-    if float(num_consist) / len(this_value_list) > 0.9:
-        if max_index - min_index <= 1.5 * len(this_value_list):
+    if float(num_consist) / len(this_value_list) > 0.4:
+        if max_index - min_index <= 2 * len(this_value_list):
             ### regard as match
             to_replace = " ".join(out_summary_list[min_index:max_index+1])
             replace_len = len(to_replace.split(" "))
@@ -188,27 +188,66 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
         box_list = box.strip().split("\t")
         box_out_list, box_field_list = join_box(box_list)
 
+        summary = summary.replace("-lrb-", "(")
+        summary = summary.replace("-rrb-", ")")
+
         tem_summary = summary.strip()
         out_summary = summary.strip()
         tem_summary_list = tem_summary.split(" ")
 
-        out_field = np.zeros_like(out_summary.split(" ")).tolist()
-        for ind in range(len(out_field)):
-            out_field[ind] = 'empty'
 
-        out_pos, out_rpos = [], []
+        out_pos, out_rpos, out_field = [], [], []
+        out_pos_bpe, out_rpos_bpe, out_field_bpe = [], [], []
 
-        for ind in range(len(out_field)):
+        out_bpe, _ = enc.encode(summary.strip())
+        out_bpe_len = len(out_bpe)
+
+        for ind in range(out_bpe_len):
+            out_pos_bpe.append(0)
+            out_rpos_bpe.append(0)
+
+        for ind in range(out_bpe_len):
+            out_field_bpe.append('empty')
+
+        for ind in range(len(tem_summary_list)):
             out_pos.append(0)
             out_rpos.append(0)
+
+        for ind in range(len(tem_summary_list)):
+            out_field.append('empty')
+
 
         for (this_name, this_value) in box_field_list:
 
             this_value_dict = {}
+            this_pos_bpe_dict = {}
+            prev = 1
             for ind, each_token in enumerate(this_value.split(" ")):
-                if each_token not in this_value_dict:
-                    this_value_dict[each_token] = ind + 1
+                # if each_token not in this_value_dict:
+                this_value_dict[each_token] = ind + 1
 
+
+
+                if this_name != "name":
+                    each_token = " " + each_token
+                else:
+                    if ind != 0:
+                        each_token = " " + each_token
+
+                bpe_tokens, bpe_tokens_original = enc.encode(each_token)
+
+                ### (start ind, len)
+                this_pos_bpe_dict[ind + 1] = (prev, len(bpe_tokens))
+                prev += len(bpe_tokens)
+
+
+            if this_name == "name":
+                bpe_value = this_value
+            else:
+                bpe_value = " " + this_value
+            bpe_tokens, bpe_tokens_original = enc.encode(bpe_value)
+
+            this_value_bpe_len = len(bpe_tokens)
             this_value_list_len = len(this_value.split(" "))
 
             if " " + this_value + " " in out_summary:
@@ -269,12 +308,70 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
                         out_pos[ind] = this_value_dict[ori_token]
                         out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
 
-        # print (box_list)
-        # print (out_summary)
+
+                    ### convert to bpe
+                    ori_token_bpe = ori_token
+                    if ind != 0:
+                        ori_token_bpe = " " + ori_token
+
+                    if ind > 0:
+                        past = tem_summary_list[:ind]
+                        past = " ".join(past)
+                        bpe_past, _ = enc.encode(past)
+                        past_len = len(bpe_past)
+
+                    else:
+
+                        past_len = 0
+
+
+
+                    bpe_tokens, bpe_tokens_original = enc.encode(ori_token_bpe)
+                    for it in range(len(bpe_tokens)):
+                        out_field_bpe[past_len + it] = this_name
+
+
+                    if ori_token in this_value_dict:
+                        bpe_pos_start, bpe_pos_len = this_pos_bpe_dict[out_pos[ind]]
+                        for it in range(bpe_pos_len):
+                            start = bpe_pos_start + it
+                            end = this_value_bpe_len - (start - 1)
+                            if start > 30:
+                                start = 30
+                            if end > 30:
+                                end = 30
+                            out_pos_bpe[past_len + it] = start
+                            out_rpos_bpe[past_len + it] = end
+
+
+
+        # ### bpe for debug
+        # box_out_list_bpe = {}
+        # for (name, value) in box_out_list:
+        #     if name != "name":
+        #         value = " " + value
+        #     bpe_tokens, bpe_tokens_original = enc.encode(value)
+        #     box_out_list_bpe[name] = " ".join(bpe_tokens_original)
+
+        bpe_tokens, bpe_tokens_original = enc.encode(summary.strip())
+        bpe_test = " ".join(bpe_tokens_original)
+
+
+        # print (box_out_list)
+        # print ("######################################")
         # print (summary.strip())
+        # print ("######################################")
         # print (out_field)
-        # print (out_pos)
-        # print (out_rpos)
+        # print ("######################################")
+        # print (box_out_list_bpe)
+        # print ("######################################")
+        # print (bpe_test)
+        # print ("######################################")
+        # print (out_field_bpe)
+        # print ("######################################")
+        # print (out_pos_bpe)
+        # print ("######################################")
+        # print (out_rpos_bpe)
         # print ("\n")
 
         # ### second fuzzy match. by individual word
@@ -308,10 +405,29 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
         assert len(tem_summary_list) == len(out_pos)
         assert len(tem_summary_list) == len(out_rpos)
 
+        assert len(out_field_bpe) == len(bpe_tokens)
+        assert len(out_pos_bpe) == len(bpe_tokens)
+        assert len(out_rpos_bpe) == len(bpe_tokens)
 
-        out_s.write(" ".join(out_field) + "\n")
-        out_p.write(" ".join([str(tmp) for tmp in out_pos]) + "\n")
-        out_rp.write(" ".join([str(tmp) for tmp in out_rpos]) + "\n")
+        # for field_tmp, pos_tmp, rpos_tmp in zip(out_field, out_pos, out_rpos):
+        #   if field_tmp == "<_PAD>":
+        #       if pos_tmp != 0:
+        #           print box_list
+        #           print out_summary
+        #           print summary.strip()
+        #           print out_field
+        #           print out_pos
+        #           print out_rpos
+        #           print "\n"
+
+        ### convert to bpe
+
+
+
+
+        out_s.write(" ".join(out_field_bpe) + "\n")
+        out_p.write(" ".join([str(tmp) for tmp in out_pos_bpe]) + "\n")
+        out_rp.write(" ".join([str(tmp) for tmp in out_rpos_bpe]) + "\n")
 
 
 
@@ -342,25 +458,56 @@ def split_infobox(domain):
         box = open(fboxes, "r").read().strip().split('\n')
         box_word, box_label, box_pos = [], [], []
         for ib in box:
-            item = ib.split('\t')
             box_single_word, box_single_label, box_single_pos = [], [], []
-            for it in item:
-                if len(it.split(':')) > 2:
+            item = ib.split('\t')
+
+            box_out_list, _ = join_box(item)
+
+            for (this_name, this_value) in box_out_list:
+
+                if '<none>' in this_value:
                     continue
-                # print it
-                prefix, word = it.split(':')
-                if '<none>' in word or word.strip()=='' or prefix.strip()=='':
-                    continue
-                new_label = re.sub("_[1-9]\d*$", "", prefix)
-                if new_label.strip() == "":
-                    continue
-                box_single_word.append(word)
-                box_single_label.append(new_label)
-                if re.search("_[1-9]\d*$", prefix):
-                    field_id = int(prefix.split('_')[-1])
-                    box_single_pos.append(field_id if field_id<=30 else 30)
-                else:
-                    box_single_pos.append(1)
+
+                if this_name != "name":
+                    this_value = " " + this_value
+
+                this_value = this_value.replace("-lrb-", "(")
+                this_value = this_value.replace("-rrb-", ")")
+
+                tokens, tokens_original = enc.encode(this_value)
+
+                for ind, each_token in enumerate(tokens_original):
+                    box_single_word.append(each_token)
+                    box_single_label.append(this_name)
+                    box_single_pos.append(ind + 1  if ind + 1<=30 else 30)
+
+
+            # print (box_out_list)
+            # print (box_single_word)
+            # print (box_single_label)
+            # print (box_single_pos)
+            # print ("\n")
+
+
+            # for it in box_out_list:
+            #     if len(it.split(':')) > 2:
+            #         continue
+            #     # print it
+            #     prefix, word = it.split(':')
+            #     if '<none>' in word or word.strip()=='' or prefix.strip()=='':
+            #         continue
+            #     new_label = re.sub("_[1-9]\d*$", "", prefix)
+            #     if new_label.strip() == "":
+            #         continue
+            #     box_single_word.append(word)
+            #     box_single_label.append(new_label)
+            #     if re.search("_[1-9]\d*$", prefix):
+            #         field_id = int(prefix.split('_')[-1])
+            #         box_single_pos.append(field_id if field_id<=30 else 30)
+            #     else:
+            #         box_single_pos.append(1)
+
+
             box_word.append(box_single_word)
             box_label.append(box_single_label)
             box_pos.append(box_single_pos)
@@ -530,7 +677,10 @@ def table2id(domain):
 
     for i in range(0, len(id2key)):
 
-        bpe_in = " " + id2key[i].replace("_", " ")
+        if i == 0:
+            bpe_in = id2key[i].replace("_", " ")
+        else:
+            bpe_in = " " + id2key[i].replace("_", " ")
         bpe_tokens, bpe_token_original = enc.encode(bpe_in)
         keyid2wordlist[i] = bpe_tokens
 
@@ -568,7 +718,7 @@ def table2id(domain):
 
 
 
-    ### gen field, pos for decoder
+    ### gen field, pos for decoder. bpe
 
     for k, (fs, fb) in enumerate(zip(fsums, boxes)):
 
@@ -603,14 +753,18 @@ def table2id(domain):
 
 
         for line_sum, line_val in zip(lines_sum, lines_val):
-            line_sum_list = line_sum.strip().split()
+
             line_val_list = line_val.strip().split()
-
-            res_sum_list = [str(enc.encoder[bpe_token]) for bpe_token in line_sum_list]
             res_val_list = [str(enc.encoder[bpe_token]) for bpe_token in line_val_list]
-
-            fsumo.write(" ".join(res_sum_list) + "\n")
             fvalo.write(" ".join(res_val_list) + "\n")
+
+
+
+            line_sum = line_sum.strip()
+            line_sum = line_sum.replace("-lrb-", "(")
+            line_sum = line_sum.replace("-rrb-", ")")
+            res_sum_list, _ = enc.encode(line_sum)
+            fsumo.write(" ".join([str(tmp) for tmp in res_sum_list]) + "\n")
 
 
         fsumo.close()
@@ -659,7 +813,7 @@ def make_dirs(domain):
 
 if __name__ == '__main__':
     domain = sys.argv[1]
-    make_dirs(domain)
+    # make_dirs(domain)
     preprocess(domain)
     check_generated_box(domain)
     print("check done")

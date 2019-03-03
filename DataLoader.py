@@ -14,7 +14,7 @@ enc = encoder.get_encoder("117M")
 
 
 class DataLoader(object):
-    def __init__(self, data_dir, limits, eos):
+    def __init__(self, data_dir, limits, eos, empty):
 
         self.train_data_path = [data_dir + '/train/train.summary.id', data_dir + '/train/train.box.val.id',
                                 data_dir + '/train/train.box.lab.id', data_dir + '/train/train.box.pos',
@@ -34,8 +34,9 @@ class DataLoader(object):
 
         self.limits = limits
         self.man_text_len = 150
-        self.man_summary_len = 100
+        self.man_summary_len = 90
         self.eos = eos
+        self.empty = empty
         start_time = time.time()
 
         print('Reading datasets ...')
@@ -268,15 +269,15 @@ class DataLoader(object):
                 gold = summary + [self.eos] * (max_summary_len - summary_len + 1)
                 summary = summary + [self.eos] * (max_summary_len - summary_len)
 
-                dec_field = dec_field + [self.eos] * (max_summary_len - summary_len)
-                dec_pos = dec_pos + [self.eos] * (max_summary_len - summary_len)
-                dec_rpos = dec_rpos + [self.eos] * (max_summary_len - summary_len)
+                dec_field = dec_field + [self.empty] * (max_summary_len - summary_len)
+                dec_pos = dec_pos + [0] * (max_summary_len - summary_len)
+                dec_rpos = dec_rpos + [0] * (max_summary_len - summary_len)
 
 
-                text = text + [self.eos] * (max_text_len - text_len)
-                field = field + [self.eos] * (max_text_len - text_len)
-                pos = pos + [self.eos] * (max_text_len - text_len)
-                rpos = rpos + [self.eos] * (max_text_len - text_len)
+                text = text + [self.empty] * (max_text_len - text_len)
+                field = field + [self.empty] * (max_text_len - text_len)
+                pos = pos + [0] * (max_text_len - text_len)
+                rpos = rpos + [0] * (max_text_len - text_len)
 
                 
                 if max_text_len > self.man_text_len:

@@ -14,8 +14,10 @@ import model as model_gpt
 from tqdm import tqdm
 ###
 # from PythonROUGE import PythonROUGE
-from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
-from preprocess import *
+# from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
+# from preprocess import *
+import encoder
+import json
 from util import * 
 
 
@@ -23,10 +25,10 @@ tf.app.flags.DEFINE_string("gpt_model_name",'117M','model name of gpt2')
 tf.app.flags.DEFINE_string("domain",'humans','domain name')
 
 tf.app.flags.DEFINE_boolean("use_coverage", True,'use coverage or not')
-tf.app.flags.DEFINE_float("coverage_penalty", 1.0,'coverage loss penalty')
+tf.app.flags.DEFINE_float("coverage_penalty", 2.0,'coverage loss penalty')
 
-tf.app.flags.DEFINE_boolean("use_copy_gate", False,'use copy gate or not')
-tf.app.flags.DEFINE_float("copy_gate_penalty", 0.1, 'copy gate loss penalty')
+tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
+tf.app.flags.DEFINE_float("copy_gate_penalty", 0.01, 'copy gate loss penalty')
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
@@ -66,19 +68,20 @@ model_dir = sys.argv[1]
 
 ###
 root_path = "../few_shot_gpt-2/"
-gold_path_valid = root_path + FLAGS.domain + '/original_data_original/valid.summary'
-gold_path_test = root_path + FLAGS.domain + '/original_data_original/test.summary'
+gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
+gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
 
 field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
 vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
 word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
-processed_data_dir = root_path + FLAGS.domain + "/processed_data_200"
+processed_data_dir = root_path + FLAGS.domain + "/processed_data"
 
 ### bpe vocab
 enc = encoder.get_encoder("117M")
 # "<|endoftext|>": 50256
 eos = 50256
+empty = 28920
 
 
 # test phase
@@ -244,7 +247,7 @@ def main():
         with open(os.path.join('../models', FLAGS.gpt_model_name, 'hparams.json')) as f:
             hparams.override_from_dict(json.load(f))
 
-        dataloader = DataLoader(processed_data_dir, FLAGS.limits, eos)
+        dataloader = DataLoader(processed_data_dir, FLAGS.limits, eos, empty)
         field_id2word = dataloader.fieldid2word
 
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size, emb_size=FLAGS.emb_size,

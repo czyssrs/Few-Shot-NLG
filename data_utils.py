@@ -186,7 +186,8 @@ def gen_bpe_data(box_in, summary_in, box_out, summary_out):
 def test():
 
 	test1 = " name"
-	test1 = [10641, 829, 348, 856, 88, 1149, 829, 348, 856, 88, 1248, 3270, 12, 1129, 1270, 764, 474, 6024]
+	# test1 = [10641, 829, 348, 856, 88, 357, 1248, 3270, 1377, 15533, 1267, 373, 281, 46932, 16716, 10099, 290, 1772, 764]
+	test1 = [10641, 829, 348, 856, 88, 1149, 829, 348, 856, 88, 1248, 3270, 12, 1129, 1270, 764]
 	# test1 = [889, 1289]
 
 
@@ -221,7 +222,7 @@ if __name__=='__main__':
 	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data/test.summary"
 	# gen_bpe_data(box_in, summary_in, box_out, summary_out)
 
-	# test()
+	test()
 
 	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/full.box"
 	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/full.summary"
@@ -231,8 +232,8 @@ if __name__=='__main__':
 
 	# convert_bpe(box_in, summary_in, box_out, summary_out)
 
-	enc = encoder.get_encoder("117M")
-	print(enc.encoder['<|endoftext|>'])
+	# enc = encoder.get_encoder("117M")
+	# print(enc.encoder['<|endoftext|>'])
 
 	# get_vars()
 
