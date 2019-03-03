@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# @Time    : 17-4-27 下午8:44
-# @Author  : Tianyu Liu
 
 import sys
 import os
@@ -67,14 +65,14 @@ model_dir = sys.argv[1]
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
 ###
-root_path = "../few_shot_gpt-2/"
+root_path = "../few_shot_gpt-2_data/"
 gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
 gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
 
 field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
 vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
-word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
+# word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
 processed_data_dir = root_path + FLAGS.domain + "/processed_data"
 
 ### bpe vocab
