@@ -66,7 +66,7 @@ model_dir = sys.argv[1]
 
 
 ###
-root_path = "/Users/heavani/Data/NLP/wikipedia-biography-dataset-master/wikipedia-biography-dataset"
+root_path = "../few_shot_gpt-2_data/"
 gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
 gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
 
