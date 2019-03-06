@@ -64,8 +64,9 @@ model_dir = sys.argv[1]
 # gold_path_test = 'processed_data/test/test_split_for_rouge/gold_summary_'
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
+
 ###
-root_path = "../few_shot_gpt-2_data/"
+root_path = "/Users/heavani/Data/NLP/wikipedia-biography-dataset-master/wikipedia-biography-dataset"
 gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
 gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
 
@@ -152,7 +153,7 @@ def train(sess, dataloader, model):
 
 
             if (k % FLAGS.report == 0):
-                print ("Round: ", k / FLAGS.report)
+                print("Round: ", k / FLAGS.report)
                 cost_time = time.time() - start_time
                 write_log("%d : loss = %.3f, time = %.3f " % (k // FLAGS.report, loss, cost_time))
                 loss, start_time = 0.0, time.time()
@@ -230,7 +231,8 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     return result
 
 def write_log(s):
-    print (s)
+    print(s)
+
     with open(log_file, 'a') as f:
         f.write(s+'\n')
 

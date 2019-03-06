@@ -186,14 +186,14 @@ class SeqUnit(object):
         # ======================================== decoder ======================================== #
 
         if self.dual_att:
-            print ('dual attention mechanism used')
+            print('dual attention mechanism used')
             with tf.variable_scope(scope_name):
                 # self.att_layer = dualAttentionWrapper(self.emb_size, self.hidden_size, self.hidden_size, self.field_attention_size,
                 #                                         en_outputs, self.field_pos_embed, "attention")
                 self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size, "attention")
                 self.units.update({'attention': self.att_layer})
         else:
-            print ("normal attention used")
+            print("normal attention used")
             with tf.variable_scope(scope_name):
                 self.att_layer = AttentionWrapper(self.hidden_size, self.hidden_size, en_outputs, "attention")
                 self.units.update({'attention': self.att_layer})

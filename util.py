@@ -8,7 +8,7 @@ import zipfile
 TOTAL_BAR_LENGTH = 100.
 last_time = time.time()
 begin_time = last_time
-print (os.popen('stty size', 'r').read())
+print(os.popen('stty size', 'r').read())
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 
@@ -24,7 +24,7 @@ def bleu_score(labels_file, predictions_path):
             stderr=subprocess.STDOUT)
         bleu_out = bleu_out.decode("utf-8")
         bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
-        print (bleu_score)
+        print(bleu_score)
         return float(bleu_score)
 
     except subprocess.CalledProcessError as error:
@@ -118,7 +118,7 @@ def create_init_embedding(vocab_file, extend_vocab_size, word2vec_file, emblen):
     '''
 
     vocab = load_vocab(vocab_file)
-    print ("vocab len: ", len(vocab))
+    print("vocab len: ", len(vocab))
 
     init_embedding = np.random.uniform(-np.sqrt(3), np.sqrt(3), size = (len(vocab) + extend_vocab_size, emblen))
 

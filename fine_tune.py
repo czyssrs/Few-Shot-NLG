@@ -277,7 +277,7 @@ def evaluate_old(sess, dataloader, model, ksave_dir, mode='valid'):
     #print nocopy_result
 
     result = copy_result + nocopy_result 
-    print result
+    print(result)
     # if mode == 'valid':
     #     print result
 
@@ -357,7 +357,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     return result
 
 def write_log(s):
-    print s
+    print(s)
     with open(log_file, 'a') as f:
         f.write(s+'\n')
 

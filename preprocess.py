@@ -7,6 +7,7 @@ import encoder
 from tqdm import tqdm
 import numpy as np
 from nltk.corpus import stopwords
+import sys
 
 # root_path = "/scratch/home/zhiyu/wiki2bio/"
 root_path = "../few_shot_gpt-2/"
@@ -71,6 +72,7 @@ def join_box(list_in):
 
     return out_list, sorted_by_second
 
+
 def load_dem_map(file_in):
     '''
     recursively load nationality map
@@ -108,6 +110,7 @@ def load_dem_map(file_in):
         final_res_map[each_con] = res_con
 
     return final_res_map
+
 
 def fuzzy_match_rep(source, substring, field_name):
 
@@ -286,6 +289,7 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
                             this_con_list = dem_map[each_con]
                             for this_con in this_con_list:
                                 if " " + this_con + " " in out_summary:
+                                    this_con_len = len(this_con.split(" "))
                                     this_con_len = len(this_con.split(" "))
                                     out_summary = out_summary.replace(" " + this_con + " ", " " + ("<" + this_name + "> ") * this_con_len)
                                     is_dem_match = 1
@@ -586,12 +590,12 @@ def check_generated_box(domain):
             ppos = pos.strip().split(' ')
             rrpos = rpos.strip().split(' ')
             if len(vval) != len(llab) or len(llab) != len(ppos) or len(ppos) != len(rrpos):
-                print (case)
-                print (val)
-                print (len(vval))
-                print (len(llab))
-                print (len(ppos))
-                print (len(rrpos))
+                print(case)
+                print(val)
+                print(len(vval))
+                print(len(llab))
+                print(len(ppos))
+                print(len(rrpos))
             assert len(vval) == len(llab)
             assert len(llab) == len(ppos)
             assert len(ppos) == len(rrpos)
@@ -771,7 +775,6 @@ def table2id(domain):
         fvalo.close()
 
 
-
 def preprocess(domain):
     """
     We use a triple <f, p+, p-> to represent the field information of a token in the specific field. 
@@ -781,14 +784,17 @@ def preprocess(domain):
     """
     print("extracting token, field type and position info from original data ...")
     time_start = time.time()
+
     split_infobox(domain)
     reverse_pos(domain)
+
     duration = time.time() - time_start
     print("extract finished in %.3f seconds" % float(duration))
 
     print("spliting test and valid summaries for ROUGE evaluation ...")
     time_start = time.time()
     split_summary_for_rouge(domain)
+
     duration = time.time() - time_start
     print("split finished in %.3f seconds" % float(duration))
 
@@ -797,7 +803,6 @@ def preprocess(domain):
     table2id(domain)
     duration = time.time() - time_start
     print("idlization finished in %.3f seconds" % float(duration))
-
 
 
 def make_dirs(domain):
@@ -817,17 +822,3 @@ if __name__ == '__main__':
     preprocess(domain)
     check_generated_box(domain)
     print("check done")
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
