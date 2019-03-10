@@ -212,6 +212,100 @@ def get_vars():
 	print_tensors_in_checkpoint_file(latest_ckp, all_tensors=True, tensor_name='')
 
 
+def get_train_vocab(box_in, summary_in, out_vocab):
+	'''
+	get vocab for few shot baselines
+	'''
+
+	vocab = {}
+
+	with open(box_in) as f:
+		for line in f:
+			line_list = line.strip().split()
+			for item in line_list:
+				if ":" in item:
+					field = item.split(":")[0]
+					value = item.split(":")[1]
+
+					if field != "" and value != "":
+						if "_" in field:
+							field = field.split("_")[0]
+
+						if field not in vocab:
+							vocab[field] = 0
+						vocab[field] += 1
+
+						if value not in vocab:
+							vocab[value] = 0
+						vocab[value] += 1
+
+
+
+	with open(summary_in) as f:
+		for line in f:
+			line_list = line.strip().split()
+			for word in line_list:
+				if word not in vocab:
+					vocab[word] = 0
+				vocab[word] += 1
+
+
+	sorted_x = sorted(vocab.items(), key=operator.itemgetter(1), reverse=True)
+
+
+	ind = 0
+	with open(out_vocab, "w") as f:
+		for tup in sorted_x:
+			if tup[1] > 0:
+				f.write(tup[0] + "\t" + str(ind) + "\n")
+				ind += 1
+
+
+	print (len(sorted_x))
+	print (ind)
+
+
+
+def get_train_vocab_bpe(summary_in, out_vocab):
+	'''
+	get train vocab of gpt data. return the mask
+	'''
+
+	vocab = []
+	enc = encoder.get_encoder("117M")
+	vocab_len = 50257
+
+	with open(summary_in) as f:
+		for line in f:
+			line = line.strip()
+			tokens, tokens_original = enc.encode(line)
+
+			for token in tokens:
+				if token not in vocab:
+					vocab.append(token)
+			
+
+	print (len(vocab))
+
+
+	res_mask = []
+	for ind in range(0, 50257):
+		if ind in vocab:
+			res_mask.append(str(1))
+		else:
+			res_mask.append(str(0))
+
+
+	with open(out_vocab, "w") as f:
+		f.write(" ".join(res_mask))
+
+
+
+
+
+
+
+
 
 
 if __name__=='__main__':
@@ -222,13 +316,13 @@ if __name__=='__main__':
 	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data/test.summary"
 	# gen_bpe_data(box_in, summary_in, box_out, summary_out)
 
-	test()
+	# test()
 
-	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/full.box"
-	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/full.summary"
+	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.box"
+	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.summary"
 
-	# box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/original.box"
-	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/original.summary"
+	# box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data/test_full.box"
+	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data/test_full.summary"
 
 	# convert_bpe(box_in, summary_in, box_out, summary_out)
 
@@ -236,6 +330,20 @@ if __name__=='__main__':
 	# print(enc.encoder['<|endoftext|>'])
 
 	# get_vars()
+
+
+
+	# ### generate vocab for baseline
+	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt_baseline_emb_pointer/humans/original_data/train_200.box"
+	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt_baseline_emb_pointer/humans/original_data/train_200.summary"
+	# out_vocab = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt_baseline_emb_pointer/humans_vocab_200.txt"
+	# get_train_vocab(box_in, summary_in, out_vocab)
+
+
+	### generate mask for gpt
+	summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data/train_200.summary"
+	out_vocab = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data/vocab_200.txt"
+	get_train_vocab_bpe(summary_in, out_vocab)
 
 
 

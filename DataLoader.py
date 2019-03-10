@@ -31,10 +31,12 @@ class DataLoader(object):
                               data_dir + '/valid/valid.box.rpos', data_dir + '/valid/valid_summary_field_id.txt',
                                 data_dir + '/valid/valid_summary_pos.txt', data_dir + '/valid/valid_summary_rpos.txt']
 
+        self.vocab_mask_path = data_dir + '/vocab_200.txt'
+
 
         self.limits = limits
         self.man_text_len = 150
-        self.man_summary_len = 90
+        self.man_summary_len = 80
         self.eos = eos
         self.empty = empty
         start_time = time.time()
@@ -57,6 +59,22 @@ class DataLoader(object):
                 self.fieldid2word.append(wordid_list)
 
         self.fieldid2word = np.array(self.fieldid2word)
+
+        self.gpt_out_mask = []
+        self.target_vocab = []
+        with open(self.vocab_mask_path) as f:
+            for line in f:
+                line_list = line.strip().split()
+                for ind, token in enumerate(line_list):
+                    self.gpt_out_mask.append(int(token) + 0.0)
+                    if token == "1":
+                        self.target_vocab.append(ind)
+
+        self.gpt_out_mask[-1] = 1.0
+        self.target_vocab.append(eos)
+        assert len(self.gpt_out_mask) == eos + 1
+        print (len(self.gpt_out_mask))
+        print (len(self.target_vocab))
 
 
     def load_data(self, path):
@@ -289,7 +307,7 @@ class DataLoader(object):
 
                 ### OOM
                 if max_summary_len > self.man_summary_len:
-                    gold = gold[:self.man_summary_len]
+                    gold = gold[:self.man_summary_len + 1]
                     summary = summary[:self.man_summary_len]
                     dec_field = dec_field[:self.man_summary_len]
                     dec_pos = dec_pos[:self.man_summary_len]
@@ -300,9 +318,16 @@ class DataLoader(object):
                 if domain == "humans":
                     gpt_context = "biography"
                 elif domain == "books":
-                    gpt_context = ""
+                    gpt_context = "book introduction"
+                elif domain == "humans_original":
+                    gpt_context = "biography"
 
                 gpt_context, _ = enc.encode(gpt_context)
+
+                # ### check:
+                # for token in gold:
+                #     if token not in self.target_vocab:
+                #         print ("Error!")
                 
 
 

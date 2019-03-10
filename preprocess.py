@@ -185,6 +185,10 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 
     for box, summary in tqdm(zip(lines_box, lines_summary)):
 
+
+        box = box.replace("-lrb-", "(")
+        box = box.replace("-rrb-", ")")
+
         box_list = box.strip().split("\t")
         box_out_list, box_field_list = join_box(box_list)
 
@@ -340,8 +344,12 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
                                 start = 30
                             if end > 30:
                                 end = 30
-                            out_pos_bpe[past_len + it] = start
-                            out_rpos_bpe[past_len + it] = end
+                            if past_len + it >= len(out_pos_bpe):
+                                this_id = past_len
+                            else:
+                                this_id = past_len + it
+                            out_pos_bpe[this_id] = start
+                            out_rpos_bpe[this_id] = end
 
 
 
@@ -458,6 +466,10 @@ def split_infobox(domain):
         box = open(fboxes, "r").read().strip().split('\n')
         box_word, box_label, box_pos = [], [], []
         for ib in box:
+
+            ib = ib.replace("-lrb-", "(")
+            ib = ib.replace("-rrb-", ")")
+
             box_single_word, box_single_label, box_single_pos = [], [], []
             item = ib.split('\t')
 
@@ -471,8 +483,8 @@ def split_infobox(domain):
                 if this_name != "name":
                     this_value = " " + this_value
 
-                this_value = this_value.replace("-lrb-", "(")
-                this_value = this_value.replace("-rrb-", ")")
+                # this_value = this_value.replace("-lrb-", "(")
+                # this_value = this_value.replace("-rrb-", ")")
 
                 tokens, tokens_original = enc.encode(this_value)
 
@@ -801,9 +813,9 @@ def preprocess(domain):
 
 
 def make_dirs(domain):
-    # os.mkdir(root_path + domain + "/results/")
-    # os.mkdir(root_path + domain + "/results/res/")
-    # os.mkdir(root_path + domain + "/results/evaluation/")
+    os.mkdir(root_path + domain + "/results/")
+    os.mkdir(root_path + domain + "/results/res/")
+    os.mkdir(root_path + domain + "/results/evaluation/")
     os.mkdir(root_path + domain + "/processed_data/")
     os.mkdir(root_path + domain + "/processed_data/train/")
     os.mkdir(root_path + domain + "/processed_data/test/")
@@ -813,7 +825,7 @@ def make_dirs(domain):
 
 if __name__ == '__main__':
     domain = sys.argv[1]
-    # make_dirs(domain)
+    make_dirs(domain)
     preprocess(domain)
     check_generated_box(domain)
     print("check done")

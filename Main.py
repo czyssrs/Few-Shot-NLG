@@ -45,7 +45,7 @@ tf.app.flags.DEFINE_integer("emb_size", 768, "Size of embedding.") # embedding f
 tf.app.flags.DEFINE_integer("field_size", 768, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size of train set.")
-tf.app.flags.DEFINE_integer("epoch", 500, "Number of training epoch.")
+tf.app.flags.DEFINE_integer("epoch", 5000, "Number of training epoch.")
 tf.app.flags.DEFINE_integer("source_vocab", 50257,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2756,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
@@ -65,12 +65,12 @@ model_dir = sys.argv[1]
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
 ###
-root_path = "../few_shot_gpt-2_data/"
+root_path = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/"
 gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
 gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
 
 field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
-vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
+# vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
 
 # word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
 processed_data_dir = root_path + FLAGS.domain + "/processed_data"
@@ -158,8 +158,8 @@ def train(sess, dataloader, model):
                 loss, start_time = 0.0, time.time()
                 if k // FLAGS.report >= 1: 
                     ksave_dir = save_model(model, sess, save_dir, k // FLAGS.report)
-                    # write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
-                    write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
+                    write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
+                    # write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
                     
 
 
@@ -206,6 +206,8 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
                 real_sum = enc.decode(summary)
                 bpe_sum = " ".join([enc.decoder[tmp] for tmp in summary])
                 
+
+                real_sum = real_sum.replace("\n", " ")
                 sw.write(real_sum + '\n')
                 pred_list.append(real_sum)
                 pred_unk.append(bpe_sum)
@@ -247,6 +249,7 @@ def main():
 
         dataloader = DataLoader(processed_data_dir, FLAGS.limits, eos, empty)
         field_id2word = dataloader.fieldid2word
+        gpt_out_mask = dataloader.gpt_out_mask
 
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size, emb_size=FLAGS.emb_size,
                         field_size=FLAGS.field_size, pos_size=FLAGS.pos_size, field_vocab=FLAGS.field_vocab,
@@ -257,7 +260,7 @@ def main():
                         encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
                         use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty,
                         fieldid2word = field_id2word, copy_gate_penalty=FLAGS.copy_gate_penalty,
-                        use_copy_gate=FLAGS.use_copy_gate, gpt_hparams=hparams)
+                        use_copy_gate=FLAGS.use_copy_gate, gpt_hparams=hparams, gpt_out_mask=gpt_out_mask)
 
 
         if FLAGS.mode == 'train':

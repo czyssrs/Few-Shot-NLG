@@ -12,6 +12,7 @@ from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
 from OutputUnit import OutputUnit
+from OutputUnit_gpt import OutputUnit_gpt
 
 from model import *
 
@@ -20,7 +21,7 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, empty_token=28920, stop_token=50256, max_length=90):
+                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, empty_token=28920, stop_token=50256, max_length=80):
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
         source_vocab, target_vocab, field_vocab, position_vocab: vocabulary size of encoder words; decoder words; field types; position
@@ -68,6 +69,8 @@ class SeqUnit(object):
 
         self.dec_input_size = self.emb_size + field_size + 2 * pos_size
 
+        self.gpt_out_mask = gpt_out_mask
+
         self.units = {}
         self.params = {}
 
@@ -104,6 +107,10 @@ class SeqUnit(object):
             self.dec_out = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
 
 
+            # self.gpt_out_mask = tf.sigmoid(
+            #                     tf.get_variable('gpt_out_mask', shape=[self.target_vocab], initializer=tf.zeros_initializer, trainable=True))
+
+
         self.units.update({'encoder_lstm': self.enc_lstm})
 
         self.batch_size = tf.shape(self.decoder_input)[0]
@@ -127,10 +134,19 @@ class SeqUnit(object):
                 self.embedding = tf.get_variable('wte', [self.gpt_hparams.n_vocab, self.gpt_hparams.n_embd])
 
 
+        # with tf.variable_scope(scope_name):
+        #     proj_init = tf.transpose(self.embedding, [1,0])
+        #     self.dec_out = OutputUnit_gpt(self.hidden_size, self.target_vocab, proj_init, 'decoder_output')
+
+
+
+
+
     # with tf.device("/gpu:1"):
         with tf.variable_scope(scope_name):
 
             self.field_id2word = tf.constant(fieldid2word)
+            self.gpt_out_mask = tf.constant(gpt_out_mask)
 
             self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
             self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
@@ -165,6 +181,9 @@ class SeqUnit(object):
             self.decoder_field_pos_emb = tf.concat([field_pos_embed_zeros, self.decoder_field_pos_emb], 1) # dec_len + 1
 
 
+            ### remove encoder
+            # self.en_outputs = tf.concat([self.encoder_embed, self.field_embed, self.pos_embed, self.rpos_embed], 2)
+            # self.en_outputs = tf.layers.dense(self.en_outputs, self.hidden_size)
 
 
         # if self.field_concat or self.fgate_enc:
@@ -180,6 +199,11 @@ class SeqUnit(object):
         else:
             print ('normal encoder used')
             en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len)
+
+
+        # ### remove encoder
+        # self.en_outputs = tf.concat([self.encoder_embed, self.field_embed, self.pos_embed, self.rpos_embed], 2)
+        # self.en_outputs = tf.layers.dense(self.en_outputs, self.hidden_size)
 
 
 
@@ -206,15 +230,15 @@ class SeqUnit(object):
                         tf.greater(self.decoder_pos_input, tf.zeros_like(self.decoder_pos_input)), tf.float32)
         self.copy_gate_mask = tf.concat([self.copy_gate_mask, tf.zeros([self.batch_size, 1], tf.float32)], 1)
 
-        # self.debug1 = tf.print(self.copy_gate_mask, [self.copy_gate_mask], summarize=1000)
+        # self.debug1 = tf.print(self.gpt_out_mask, [tf.shape(self.gpt_out_mask)], summarize=1000)
 
 
 
 
         # decoder for training
-        de_outputs, _, self.de_conv_loss, self.copy_gate_loss = self.decoder_t(en_state, self.decoder_input, self.decoder_len, x0, past0, hidden0)
+        de_outputs, _, self.de_conv_loss, self.copy_gate_loss = self.decoder_t(self.decoder_input, self.decoder_len, x0, past0, hidden0)
         # decoder for testing
-        self.g_tokens, self.atts = self.decoder_g(en_state, x0, past0, hidden0)
+        self.g_tokens, self.atts = self.decoder_g(x0, past0, hidden0)
         # self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size)
         
 
@@ -323,7 +347,7 @@ class SeqUnit(object):
             'hidden': hidden
         }
 
-    def decoder_t(self, initial_state, inputs, inputs_len, x0, past0, hidden0):
+    def decoder_t(self, inputs, inputs_len, x0, past0, hidden0):
         ### gather p_gen and att_weights
         batch_size = tf.shape(self.decoder_input)[0]
         max_time = tf.shape(self.decoder_input)[1]
@@ -341,6 +365,10 @@ class SeqUnit(object):
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
         covloss0 = 0.0
 
+        gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
+        gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
+
+
         def loop_fn(t, x_t, past, hidden, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
 
 
@@ -350,12 +378,17 @@ class SeqUnit(object):
                 # logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
                 # o_dist = tf.nn.softmax(logits) 
 
+                # o_dist *= self.gpt_out_mask
+
                 past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
                 hidden_nt = next_outputs['hidden'][:, -1, :]
 
                 ### try with tune
                 logits = self.dec_out(hidden_nt, finished)
                 o_dist = tf.nn.softmax(logits)
+                o_dist = tf.multiply(o_dist, gpt_mask_layer)
+                o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
 
             ### concat field pos 
             batch_nums_time = tf.range(0, limit=batch_size)
@@ -365,7 +398,7 @@ class SeqUnit(object):
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
             att_x_in = tf.concat([att_x_in, this_field_pos_emb], axis=1)
 
-            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed)
+            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed, finished=finished)
 
 
             ### o_weight = batch * len, already normalized. p_gen = batch * 1
@@ -391,7 +424,6 @@ class SeqUnit(object):
             ### for gate loss
             # emit_gate = emit_gate.write(t, tf.sigmoid(p_gen))
             emit_gate = emit_gate.write(t, tf.multiply(p_gen, copy_mask))
-
             emit_ta = emit_ta.write(t, final_dists)
 
 
@@ -416,7 +448,7 @@ class SeqUnit(object):
         outputs_gate = tf.squeeze(tf.transpose(emit_gate.stack(), [1,0,2]))
         return outputs, past_final, emit_covloss, outputs_gate
 
-    def decoder_g(self, initial_state, x0, past0, hidden0):
+    def decoder_g(self, x0, past0, hidden0):
         batch_size = tf.shape(self.encoder_input)[0]
         encoder_len = tf.shape(self.encoder_embed)[1]
 
@@ -435,15 +467,21 @@ class SeqUnit(object):
         ### coverage mechanisim
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
 
-        def loop_fn(t, x_t, past, hidden, field_pos_emb, emit_ta, att_ta, coverage_att_sum, finished):
+        att_mask = tf.ones([batch_size, encoder_len], dtype=tf.float32)
+
+        gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
+        gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
+
+        def loop_fn(t, x_t, past, hidden, field_pos_emb, emit_ta, att_ta, coverage_att_sum, att_mask, finished):
 
 
 
             with tf.device("/gpu:1"):
                 ### gpt generate
                 next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
-                logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
-                o_dist = tf.nn.softmax(logits) 
+                # logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
+                # o_dist = tf.nn.softmax(logits) 
+                # o_dist *= self.gpt_out_mask
 
                 past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
                 hidden_nt = next_outputs['hidden'][:, -1, :]
@@ -451,16 +489,22 @@ class SeqUnit(object):
                 ### try with tune
                 logits = self.dec_out(hidden_nt, finished)
                 o_dist = tf.nn.softmax(logits)
+                o_dist = tf.multiply(o_dist, gpt_mask_layer)
+                o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
 
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
             att_x_in = tf.concat([att_x_in, field_pos_emb], axis=1)
 
-            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed)
+            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed, finished=finished)
 
 
             ### o_weight = batch * len, already normalized. p_gen = batch * 1
             out_dist = p_gen * o_dist # batch * self.target_vocab
             att_dist = (1 - p_gen) * o_weight # batch * len
+
+            ### mask previous
+            att_dist *= att_mask
 
 
             batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
@@ -513,14 +557,27 @@ class SeqUnit(object):
 
 
 
+            ### mask atten pos of previous
+            att_pos *= mask
+            att_pos_tile = tf.expand_dims(att_pos, 1)
+            att_pos_tile = tf.tile(att_pos_tile, [1, encoder_len])
+            att_mask_enc = tf.range(0, encoder_len)
+            att_mask_enc = tf.expand_dims(att_mask_enc, 0)
+            att_mask_enc = tf.tile(att_mask_enc, [batch_size, 1])
+            mask_enc = tf.cast(tf.not_equal(att_pos_tile, att_mask_enc), tf.float32)
+            att_mask *= mask_enc
+
+
+
+
             finished = tf.logical_or(finished, tf.equal(x_nt, self.stop_token))
             finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
-            return t+1, x_nt, past_nt, hidden_nt, field_pos_nt, emit_ta, att_ta, coverage_att_sum, finished
+            return t+1, x_nt, past_nt, hidden_nt, field_pos_nt, emit_ta, att_ta, coverage_att_sum, att_mask, finished
 
-        _, _, past_final, hidden_final, field_pos_nt, emit_ta, att_ta, _, _ = tf.while_loop(
-            cond=lambda _1, _2, _3, _4, _5, _6, _7, _8, finished: tf.logical_not(tf.reduce_all(finished)),
+        _, _, past_final, hidden_final, field_pos_nt, emit_ta, att_ta, _, _, _ = tf.while_loop(
+            cond=lambda _1, _2, _3, _4, _5, _6, _7, _8, _9, finished: tf.logical_not(tf.reduce_all(finished)),
             body=loop_fn,
-            loop_vars=(time, x0, past0, hidden0, field_pos0, emit_ta, att_ta, coverage_att_sum, f0))
+            loop_vars=(time, x0, past0, hidden0, field_pos0, emit_ta, att_ta, coverage_att_sum, att_mask, f0))
 
         outputs = tf.transpose(emit_ta.stack(), [1,0,2])
         pred_tokens = tf.argmax(outputs, 2)
