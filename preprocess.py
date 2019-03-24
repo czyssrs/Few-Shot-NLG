@@ -17,7 +17,8 @@ merge_field_vocab = root_path + "human_books_songs_films_field_vocab.txt"
 ### bpe vocab
 enc = encoder.get_encoder("117M")
 # "empty": 28920
-field_empty = 28920
+# field_empty = 28920
+field_empty = 5713
 
 
 def join_box(list_in):
@@ -443,6 +444,55 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
     out_p.close()
     out_rp.close()
 
+
+def gen_context(domain):
+    '''
+    trail: generate context for gpt
+    '''
+    boxes = [root_path + domain + "/original_data/train.box", root_path + domain + "/original_data/valid.box", root_path + domain + "/original_data/test.box"]
+    context = [root_path + domain + "/processed_data/train/train.context", 
+                root_path + domain + "/processed_data/valid/valid.context", 
+                root_path + domain + "/processed_data/test/test.context"]
+    
+    mixb_word, mixb_label, mixb_pos = [], [], []
+    for fboxes in boxes:
+        box = open(fboxes, "r").read().strip().split('\n')
+        box_word, box_label, box_pos = [], [], []
+        for ib in box:
+
+            ib = ib.replace("-lrb-", "(")
+            ib = ib.replace("-rrb-", ")")
+
+            box_single_word, box_single_label, box_single_pos = [], [], []
+            item = ib.split('\t')
+
+            box_out_list, _ = join_box(item)
+
+            for (this_name, this_value) in box_out_list:
+
+                if '<none>' in this_value:
+                    continue
+
+                this_value = " " + this_value
+
+                if this_name != "name":
+                    context_name = this_name.replace("_", " ")
+
+                # this_value = this_value.replace("-lrb-", "(")
+                # this_value = this_value.replace("-rrb-", ")")
+
+                tokens, tokens_original = enc.encode(this_value)
+
+                for ind, each_token in enumerate(tokens_original):
+                    box_single_word.append(each_token)
+                    box_single_label.append(this_name)
+                    box_single_pos.append(ind + 1  if ind + 1<=30 else 30)
+
+
+
+
+
+
 def split_infobox(domain):
     """
     extract box content, field type and position information from infoboxes from original_data
@@ -767,7 +817,15 @@ def table2id(domain):
         for line_sum, line_val in zip(lines_sum, lines_val):
 
             line_val_list = line_val.strip().split()
-            res_val_list = [str(enc.encoder[bpe_token]) for bpe_token in line_val_list]
+            res_val_list = []
+            for bpe_token in line_val_list:
+                if bpe_token in enc.encoder:
+                    res_val_list.append(str(enc.encoder[bpe_token]))
+                else:
+                    res_val_list.append(str(enc.encoder["empty"]))
+
+
+            # res_val_list = [str(enc.encoder[bpe_token]) for bpe_token in line_val_list]
             fvalo.write(" ".join(res_val_list) + "\n")
 
 
@@ -781,6 +839,43 @@ def table2id(domain):
 
         fsumo.close()
         fvalo.close()
+
+
+def get_train_vocab_bpe(domain):
+    '''
+    get train vocab of gpt data. return the mask
+    '''
+
+    summary_in = root_path + domain + '/original_data/train.summary'
+    out_vocab = root_path + domain + '/processed_data/vocab_local.txt'
+
+    vocab = []
+    enc = encoder.get_encoder("117M")
+    vocab_len = 50257
+
+    with open(summary_in) as f:
+        for line in f:
+            line = line.strip()
+            tokens, tokens_original = enc.encode(line)
+
+            for token in tokens:
+                if token not in vocab:
+                    vocab.append(token)
+            
+
+    print (len(vocab))
+
+
+    res_mask = []
+    for ind in range(0, 50257):
+        if ind in vocab:
+            res_mask.append(str(1))
+        else:
+            res_mask.append(str(0))
+
+
+    with open(out_vocab, "w") as f:
+        f.write(" ".join(res_mask))
 
 
 
@@ -809,6 +904,9 @@ def preprocess(domain):
     table2id(domain)
     duration = time.time() - time_start
     print("idlization finished in %.3f seconds" % float(duration))
+
+    print("get vocab for train set")
+    get_train_vocab_bpe(domain)
 
 
 

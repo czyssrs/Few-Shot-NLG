@@ -21,13 +21,19 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, empty_token=28920, stop_token=50256, max_length=80):
+                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, vocab_ind, empty_token=5713, stop_token=6975, max_length=85):
+
+
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
         source_vocab, target_vocab, field_vocab, position_vocab: vocabulary size of encoder words; decoder words; field types; position
         field_concat, position_concat: bool values, whether concat field/position embedding to word embedding for encoder inputs or not
         fgate_enc, dual_att: bool values, whether use field-gating / dual attention or not
         encoder_add_pos, decoder_add_pos: bool values, whether add position embedding to field-gating encoder / decoder with dual attention or not
+
+        ###
+        original full vocab ind
+        empty_token=28920, stop_token=50256
         '''
 
         ### caution dynamic batch size
@@ -70,6 +76,8 @@ class SeqUnit(object):
         self.dec_input_size = self.emb_size + field_size + 2 * pos_size
 
         self.gpt_out_mask = gpt_out_mask
+        self.start_token = empty_token
+        self.select_ind = vocab_ind
 
         self.units = {}
         self.params = {}
@@ -94,6 +102,8 @@ class SeqUnit(object):
         self.decoder_pos_input = tf.placeholder(tf.int32, [None, None])
         self.decoder_rpos_input = tf.placeholder(tf.int32, [None, None])
 
+        self.context = tf.placeholder(tf.int32, [None, None])
+
 
         with tf.variable_scope(scope_name):
             if self.fgate_enc:
@@ -105,6 +115,10 @@ class SeqUnit(object):
             # self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
             # self.dec_lstm = LstmUnit(self.hidden_size, self.dec_input_size, 'decoder_lstm')
             self.dec_out = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
+            self.dec_out_lstm = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output_lstm')
+
+            # self.hidden_w = tf.get_variable('hidden_w', [2*self.hidden_size, self.hidden_size])
+            # self.hidden_b = tf.get_variable('hidden_b', [self.hidden_size])
 
 
             # self.gpt_out_mask = tf.sigmoid(
@@ -117,21 +131,31 @@ class SeqUnit(object):
 
 
 
-        with tf.device("/gpu:1"):
-            ### start with context tokens of domain
-            ### start reuse of gpt
-            context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context, self.batch_size)
-            logits0 = context_outputs['logits'][:, -1, :]
-            dist0 = tf.nn.softmax(logits0) # start token
-            x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
-            past0 = context_outputs['presents']
-            hidden0 = context_outputs['hidden'][:, -1, :]
+        gpt_emb_init_tune('model', self.gpt_hparams, tf.constant(self.select_ind))
 
-            # ======================================== embeddings ======================================== #
+        # with tf.device("/gpu:1"):
+        ### start with context tokens of domain
+        ### start reuse of gpt
+        # context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context, self.batch_size)
+        self.gpt_context_in = tf.concat([self.encoder_input, self.gpt_context], 1)
+        context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context_in, self.batch_size)
+        # context_outputs = self.step_gpt(self.gpt_hparams, self.encoder_input, self.batch_size)
+        logits0 = context_outputs['logits'][:, -1, :]
+        dist0 = tf.nn.softmax(logits0) # start token
+        x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
+        past0 = context_outputs['presents']
+        hidden0 = context_outputs['hidden'][:, -1, :]
 
-            with tf.variable_scope('model', reuse=True):
-                ### use the one in gpt2
-                self.embedding = tf.get_variable('wte', [self.gpt_hparams.n_vocab, self.gpt_hparams.n_embd])
+        # gpt_emb_init('model', self.gpt_hparams)
+
+        # ======================================== embeddings ======================================== #
+
+        with tf.variable_scope('model', reuse=True):
+            ### use the one in gpt2
+            self.embedding = tf.get_variable('wte_tune', [self.gpt_hparams.n_vocab, self.gpt_hparams.n_embd], trainable=False)
+
+
+            # self.en_outputs = context_outputs['hidden']
 
 
         # with tf.variable_scope(scope_name):
@@ -200,6 +224,9 @@ class SeqUnit(object):
             print ('normal encoder used')
             en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len)
 
+        # ### try with gpt out as en out
+        # self.en_outputs = tf.concat([self.en_outputs, self.field_pos_embed], 2)
+
 
         # ### remove encoder
         # self.en_outputs = tf.concat([self.encoder_embed, self.field_embed, self.pos_embed, self.rpos_embed], 2)
@@ -228,11 +255,36 @@ class SeqUnit(object):
 
         self.copy_gate_mask = tf.cast(
                         tf.greater(self.decoder_pos_input, tf.zeros_like(self.decoder_pos_input)), tf.float32)
-        self.copy_gate_mask = tf.concat([self.copy_gate_mask, tf.zeros([self.batch_size, 1], tf.float32)], 1)
+        self.copy_gate_mask = tf.concat([self.copy_gate_mask, tf.zeros([tf.shape(self.encoder_input)[0], 1], tf.float32)], 1)
 
         # self.debug1 = tf.print(self.gpt_out_mask, [tf.shape(self.gpt_out_mask)], summarize=1000)
 
 
+        # ### how to condition on encoder?
+        # with tf.variable_scope(scope_name):
+        #     st_1, st_2 = en_state
+        #     cond_hidden0 = tf.concat([st_1, st_2], 1)
+        #     self.cond_hidden0 = tf.layers.dense(cond_hidden0, self.hidden_size)
+        #     self.cond_hidden0 = tf.expand_dims(self.cond_hidden0, 1)
+        #     start_len = tf.shape(self.gpt_context)[1]
+        #     self.cond_hidden0 = tf.tile(self.cond_hidden0, [1, start_len, 1])
+
+        # # decoder for training
+        # de_outputs, de_state, self.de_conv_loss, self.copy_gate = self.decoder_t(en_state, self.decoder_embed, self.decoder_len)
+        # # decoder for testing
+        # self.g_tokens, self.atts = self.decoder_g(en_state)
+
+
+        # with tf.device("/gpu:1"):
+        #     ### start with context tokens of domain
+        #     ### start reuse of gpt
+        #     # context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context, self.batch_size)
+        #     context_outputs = self.step_gpt(self.gpt_hparams, self.encoder_input, self.batch_size)
+        #     logits0 = context_outputs['logits'][:, -1, :]
+        #     dist0 = tf.nn.softmax(logits0) # start token
+        #     x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
+        #     past0 = context_outputs['presents']
+        #     hidden0 = context_outputs['hidden'][:, -1, :]
 
 
         # decoder for training
@@ -269,8 +321,7 @@ class SeqUnit(object):
 
         self.de_conv_loss *= self.coverage_penalty
 
-        ### maximize where copy
-        self.copy_gate_loss = (self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_loss))
+        self.copy_gate_loss = self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_loss)
 
         if self.use_copy_gate:
             self.mean_loss += self.copy_gate_loss
@@ -280,8 +331,10 @@ class SeqUnit(object):
 
 
 
-        # tvars = tf.trainable_variables()
-        train_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='seq2seq')
+        # train_var = tf.trainable_variables()
+        # train_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='seq2seq')
+
+        train_params = tf.trainable_variables()
 
 
         ### train enc-dec
@@ -292,11 +345,49 @@ class SeqUnit(object):
             # self.train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=self.global_step)
 
             self.global_step = tf.Variable(0, name='global_step', trainable=False)
-            grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, train_var), self.grad_clip)
-            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-            self.train_op = optimizer.apply_gradients(zip(grads, train_var), global_step=self.global_step)
+            self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, train_params, colocate_gradients_with_ops=True), self.grad_clip)
+        #     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        #     self.train_op = optimizer.apply_gradients(zip(self.grads, train_params), global_step=self.global_step)
+
+        # self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
+
+
+
+        ### accumulate gradient
+        # with tf.variable_scope(scope_name):
+            self.opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+
+            self.acc_gradients = list(map(lambda param: tf.get_variable(param.name.split(":")[0],
+                                                                    param.get_shape(), param.dtype,
+                                                                    tf.constant_initializer(0.0), trainable=False),
+                                                                    train_params))
+
+            self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+            self._cov_loss = tf.get_variable("acc_cov_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+            self._gate_loss = tf.get_variable("acc_gate_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+
+            # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
+            acc_opt = tf.train.GradientDescentOptimizer(-1.0)
+            self.accumulate_gradients = acc_opt.apply_gradients(zip(self.grads, self.acc_gradients))
+            self.acc_loss = acc_opt.apply_gradients([(self.mean_loss, self._loss)])
+            self.acc_cov_loss = acc_opt.apply_gradients([(self.de_conv_loss, self._cov_loss)])
+            self.acc_gate_loss = acc_opt.apply_gradients([(self.copy_gate_loss, self._gate_loss)])
+
+
+            # train update
+            self.update = self.opt.apply_gradients(
+                zip(list(map(lambda v: v.value(), self.acc_gradients)), train_params), global_step=self.global_step)
+
+            self.reset = list(map(lambda param: param.initializer, self.acc_gradients))
+            self.reset.append(self._loss.initializer)
+            self.reset.append(self._cov_loss.initializer)
+            self.reset.append(self._gate_loss.initializer)
+
 
         self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
+
+
+
 
 
     def fgate_encoder(self, inputs, fields, inputs_len):
@@ -334,7 +425,6 @@ class SeqUnit(object):
 
 
     def step_gpt(self, hparams, tokens, batch_size, past=None):
-        # with tf.device("/gpu:2"):
         lm_output = model(hparams=hparams, X=tokens, past=past, reuse=tf.AUTO_REUSE)
 
         logits = lm_output['logits'][:, :, :hparams.n_vocab]
@@ -365,29 +455,31 @@ class SeqUnit(object):
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
         covloss0 = 0.0
 
-        gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
-        gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
+        # gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
+        # gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
 
 
         def loop_fn(t, x_t, past, hidden, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
 
 
-            with tf.device("/gpu:1"):
-                ### gpt generate
-                next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
-                # logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
-                # o_dist = tf.nn.softmax(logits) 
+            # with tf.device("/gpu:1"):
+            ### gpt generate
+            next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
+            logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
+            o_dist = tf.nn.softmax(logits) 
 
-                # o_dist *= self.gpt_out_mask
+            # o_dist *= self.gpt_out_mask
 
-                past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
-                hidden_nt = next_outputs['hidden'][:, -1, :]
+            past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
+            hidden_nt = next_outputs['hidden'][:, -1, :]
 
-                ### try with tune
-                logits = self.dec_out(hidden_nt, finished)
-                o_dist = tf.nn.softmax(logits)
-                o_dist = tf.multiply(o_dist, gpt_mask_layer)
-                o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
+            # ### try with tune
+            # logits = self.dec_out(hidden_nt, finished)
+            # # logits = self.dec_out(hidden_nt_cond, finished)
+            # o_dist = tf.nn.softmax(logits)
+            # # o_dist = tf.multiply(o_dist, gpt_mask_layer)
+            # # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
 
 
             ### concat field pos 
@@ -469,28 +561,30 @@ class SeqUnit(object):
 
         att_mask = tf.ones([batch_size, encoder_len], dtype=tf.float32)
 
-        gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
-        gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
+        # gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
+        # gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
 
         def loop_fn(t, x_t, past, hidden, field_pos_emb, emit_ta, att_ta, coverage_att_sum, att_mask, finished):
 
 
 
-            with tf.device("/gpu:1"):
-                ### gpt generate
-                next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
-                # logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
-                # o_dist = tf.nn.softmax(logits) 
-                # o_dist *= self.gpt_out_mask
+            # with tf.device("/gpu:1"):
+            ### gpt generate
+            next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
+            logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
+            o_dist = tf.nn.softmax(logits) 
+            # o_dist *= self.gpt_out_mask
 
-                past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
-                hidden_nt = next_outputs['hidden'][:, -1, :]
+            past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
+            hidden_nt = next_outputs['hidden'][:, -1, :]
 
-                ### try with tune
-                logits = self.dec_out(hidden_nt, finished)
-                o_dist = tf.nn.softmax(logits)
-                o_dist = tf.multiply(o_dist, gpt_mask_layer)
-                o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
+            # ### try with tune
+            # logits = self.dec_out(hidden_nt, finished)
+            # # logits = self.dec_out(hidden_nt_cond, finished)
+            # o_dist = tf.nn.softmax(logits)
+            # # o_dist = tf.multiply(o_dist, gpt_mask_layer)
+            # # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
 
 
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
@@ -585,28 +679,64 @@ class SeqUnit(object):
         return pred_tokens, atts
 
 
-    def __call__(self, x, sess):
+
+    def __call__(self, x, sess, mode):
 
 
-        ### normal training
-        loss,  _, copy_gate_loss, de_conv_loss = sess.run([self.mean_loss, self.train_op, self.copy_gate_loss, self.de_conv_loss],
-                                                       {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
-                                                        self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
-                                                        self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                                                        self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
-                                                        self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
-                                                        self.decoder_rpos_input: x['dec_rpos'], self.gpt_context: x['gpt_context']})
+        # ### normal training
+        # loss,  _, copy_gate_loss, de_conv_loss = sess.run([self.mean_loss, self.train_op, self.copy_gate_loss, self.de_conv_loss],
+        #                                                {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
+        #                                                 self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
+        #                                                 self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
+        #                                                 self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+        #                                                 self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+        #                                                 self.decoder_rpos_input: x['dec_rpos'], self.gpt_context: x['gpt_context'],
+        #                                                 self.context: x['context']})
 
 
-        return loss, copy_gate_loss, de_conv_loss
+        # return loss, copy_gate_loss, de_conv_loss
+
+        ### accumulate gradient
+        if mode == 0:
+            loss, copy_gate_loss, de_conv_loss, _, _, _, _ = sess.run([self.mean_loss, self.copy_gate_loss, self.de_conv_loss, self.accumulate_gradients, self.acc_loss, \
+                                                                    self.acc_cov_loss, self.acc_gate_loss],
+                                                           {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
+                                                            self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
+                                                            self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
+                                                            self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+                                                            self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+                                                            self.decoder_rpos_input: x['dec_rpos'], self.gpt_context: x['gpt_context'],
+                                                            self.context: x['context']})
+
+
+            return loss, copy_gate_loss, de_conv_loss, 0
+
+        ### update
+        if mode == 1:
+
+            acc_loss, acc_cov_loss, acc_gate_loss = sess.run([self._loss, self._cov_loss, self._gate_loss])
+            sess.run(self.update)
+            sess.run(self.reset)
+
+
+            return acc_loss, acc_gate_loss, acc_cov_loss
 
     def generate(self, x, sess):
         predictions, atts = sess.run([self.g_tokens, self.atts],
                                {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'], 
                                 self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
                                 self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                                self.gpt_context: x['gpt_context']})
+                                self.gpt_context: x['gpt_context'], self.context: x['context']})
         return predictions, atts
+
+    def generate_beam(self, x, sess):
+        # beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
+        beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all = sess.run(
+                         [self.beam_seqs,self.beam_probs, self.cand_seqs, self.cand_probs],
+                         {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'],
+                          self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
+                          self.encoder_rpos: x['enc_rpos']})
+        return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
     def save(self, path, sess):
 

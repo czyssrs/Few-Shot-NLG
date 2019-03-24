@@ -31,12 +31,12 @@ class DataLoader(object):
                               data_dir + '/valid/valid.box.rpos', data_dir + '/valid/valid_summary_field_id.txt',
                                 data_dir + '/valid/valid_summary_pos.txt', data_dir + '/valid/valid_summary_rpos.txt']
 
-        self.vocab_mask_path = data_dir + '/vocab_200.txt'
+        self.vocab_mask_path = data_dir + '/vocab_local.txt'
 
 
         self.limits = limits
         self.man_text_len = 150
-        self.man_summary_len = 80
+        self.man_summary_len = 85
         self.eos = eos
         self.empty = empty
         start_time = time.time()
@@ -72,9 +72,9 @@ class DataLoader(object):
 
         self.gpt_out_mask[-1] = 1.0
         self.target_vocab.append(eos)
-        assert len(self.gpt_out_mask) == eos + 1
-        print (len(self.gpt_out_mask))
-        print (len(self.target_vocab))
+        # assert len(self.gpt_out_mask) == eos + 1
+        # print (len(self.gpt_out_mask))
+        # print (len(self.target_vocab))
 
 
     def load_data(self, path):
@@ -267,7 +267,7 @@ class DataLoader(object):
 
             batch_data = {'enc_in':[], 'enc_fd':[], 'enc_pos':[], 'enc_rpos':[], 'enc_len':[],
                           'dec_in':[], 'dec_len':[], 'dec_out':[], 'oov_map':[], 'dec_field':[],
-                          'dec_pos':[], 'dec_rpos':[], 'gpt_context':[]}
+                          'dec_pos':[], 'dec_rpos':[], 'gpt_context':[], 'context':[]}
 
             for summary, text, field, pos, rpos, dec_field, dec_pos, dec_rpos in zip(summaries[start_index:end_index], texts[start_index:end_index],
                                             fields[start_index:end_index], poses[start_index:end_index],
@@ -285,6 +285,7 @@ class DataLoader(object):
                 assert len(dec_field) == len(summary)
 
                 gold = summary + [self.eos] * (max_summary_len - summary_len + 1)
+                context = [self.eos] * (max_summary_len - summary_len) + summary
                 summary = summary + [self.eos] * (max_summary_len - summary_len)
 
                 dec_field = dec_field + [self.empty] * (max_summary_len - summary_len)
@@ -309,6 +310,9 @@ class DataLoader(object):
                 if max_summary_len > self.man_summary_len:
                     gold = gold[:self.man_summary_len + 1]
                     summary = summary[:self.man_summary_len]
+
+                    context = context[-self.man_summary_len:]
+
                     dec_field = dec_field[:self.man_summary_len]
                     dec_pos = dec_pos[:self.man_summary_len]
                     dec_rpos = dec_rpos[:self.man_summary_len]
@@ -316,11 +320,11 @@ class DataLoader(object):
 
 
                 if domain == "humans":
-                    gpt_context = "biography"
+                    gpt_context = " Biography :"
                 elif domain == "books":
-                    gpt_context = "book introduction"
-                elif domain == "humans_original":
-                    gpt_context = "biography"
+                    gpt_context = " book introduction"
+                elif domain == "humans_tune":
+                    gpt_context = " Biography :"
 
                 gpt_context, _ = enc.encode(gpt_context)
 
@@ -343,6 +347,7 @@ class DataLoader(object):
                 batch_data['dec_pos'].append(dec_pos)
                 batch_data['dec_rpos'].append(dec_rpos)
                 batch_data['gpt_context'].append(gpt_context)
+                batch_data['context'].append(context)
 
 
             yield batch_data
