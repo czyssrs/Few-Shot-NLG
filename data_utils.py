@@ -187,7 +187,11 @@ def test():
 
 	test1 = " name"
 	# test1 = [10641, 829, 348, 856, 88, 357, 1248, 3270, 1377, 15533, 1267, 373, 281, 46932, 16716, 10099, 290, 1772, 764]
-	test1 = [12427, 17266, 32790, 72, 38325]
+	# 10641 829 348 856 88 357 1248 3270 1377 15533 1267 373 281 46932 16716 10099 290 1772 764
+	# test1 = [12427, 17266, 32790, 72, 38325]
+	test1 = [35626, 266, 13, 6314, 2162, 4082, 3128, 1058, 1511, 46593, 346, 24217, 2162, 29835, 1058, 45630, \
+	272, 2162, 9901, 1058, 410, 4066, 34508, 6403, 2162, 2214, 1058, 3230, 12446, 2162, 435, 2611, 26910, 1058, \
+	6403, 286, 686, 35983, 2162, 3172, 66, 21231, 1058, 277, 2162, 3172, 66, 4686, 1058, 279, 2127, 22515, 2162, 2708, 3670, 1058, 1931, 291, 6314, 2162]
 	# test1 = [889, 1289]
 
 
@@ -403,7 +407,7 @@ if __name__=='__main__':
 	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data/test.summary"
 	# gen_bpe_data(box_in, summary_in, box_out, summary_out)
 
-	# test()
+	test()
 
 	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.box"
 	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.summary"
@@ -427,13 +431,13 @@ if __name__=='__main__':
 	# get_train_vocab(box_in, summary_in, out_vocab)
 
 
-	### generate mask for gpt
-	summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_tune/original_data/train_1000.summary"
-	box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_tune/original_data/train_1000.box"
-	json_ori_in = "/scratch/home/zhiyu/wiki2bio/models/117M_original/encoder.json"
-	vocab_ind_out = "/scratch/home/zhiyu/wiki2bio/models/117M/vocab_ind.txt"
-	json_out = "/scratch/home/zhiyu/wiki2bio/models/117M/encoder.json"
-	get_train_vocab_bpe(summary_in, box_in, json_ori_in, json_out, vocab_ind_out)
+	# ### generate mask for gpt
+	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_tune/original_data/train_1000.summary"
+	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_tune/original_data/train_1000.box"
+	# json_ori_in = "/scratch/home/zhiyu/wiki2bio/models/117M_original/encoder.json"
+	# vocab_ind_out = "/scratch/home/zhiyu/wiki2bio/models/117M/vocab_ind.txt"
+	# json_out = "/scratch/home/zhiyu/wiki2bio/models/117M/encoder.json"
+	# get_train_vocab_bpe(summary_in, box_in, json_ori_in, json_out, vocab_ind_out)
 
 
 

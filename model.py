@@ -146,17 +146,28 @@ def positions_for(tokens, past_length):
 
 def gpt_emb_init(scope, hparams):
     with tf.variable_scope(scope):
-        wte = tf.get_variable('wte', [hparams.n_vocab_original, hparams.n_embd],
+        wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
                              initializer=tf.random_normal_initializer(stddev=0.02))
 
-def gpt_emb_init_tune(scope, hparams, select_ind):
+# def gpt_emb_init_tune(scope, hparams, select_ind):
+#     with tf.variable_scope(scope):
+
+#         wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
+#                              initializer=tf.random_normal_initializer(stddev=0.02))
+
+#         # selected = tf.nn.embedding_lookup(wte, select_ind)
+
+#         wte_tune = tf.get_variable('wte_tune', initializer=wte, trainable=False)
+
+def gpt_emb_init_tune(scope, hparams):
     with tf.variable_scope(scope):
-        wte = tf.get_variable('wte', [hparams.n_vocab_original, hparams.n_embd],
+
+        wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
                              initializer=tf.random_normal_initializer(stddev=0.02))
 
-        selected = tf.nn.embedding_lookup(wte, select_ind)
+        # selected = tf.nn.embedding_lookup(wte, select_ind)
 
-        wte_tune = tf.get_variable('wte_tune', initializer=selected, trainable=False)
+        wte_tune = tf.get_variable('wte_tune', initializer=wte, trainable=False)
 
 
 def model(hparams, X, past=None, scope='model', reuse=False):

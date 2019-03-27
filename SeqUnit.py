@@ -21,7 +21,7 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, vocab_ind, empty_token=5713, stop_token=6975, max_length=85):
+                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, vocab_ind, empty_token=28920, stop_token=50256, max_length=85):
 
 
         '''
@@ -104,6 +104,9 @@ class SeqUnit(object):
 
         self.context = tf.placeholder(tf.int32, [None, None])
 
+        self.encoder_input_real = tf.placeholder(tf.int32, [None, None])
+        self.decoder_input_real = tf.placeholder(tf.int32, [None, None])
+
 
         with tf.variable_scope(scope_name):
             if self.fgate_enc:
@@ -131,13 +134,15 @@ class SeqUnit(object):
 
 
 
-        gpt_emb_init_tune('model', self.gpt_hparams, tf.constant(self.select_ind))
+        # gpt_emb_init_tune('model', self.gpt_hparams, tf.constant(self.select_ind))
+        gpt_emb_init_tune('model', self.gpt_hparams)
 
         # with tf.device("/gpu:1"):
         ### start with context tokens of domain
         ### start reuse of gpt
         # context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context, self.batch_size)
-        self.gpt_context_in = tf.concat([self.encoder_input, self.gpt_context], 1)
+        # self.gpt_context_in = tf.concat([self.encoder_input, self.gpt_context], 1)
+        self.gpt_context_in = tf.concat([self.context, self.gpt_context], 1)
         context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context_in, self.batch_size)
         # context_outputs = self.step_gpt(self.gpt_hparams, self.encoder_input, self.batch_size)
         logits0 = context_outputs['logits'][:, -1, :]
@@ -174,6 +179,9 @@ class SeqUnit(object):
 
             self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
             self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
+
+            # self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input_real)
+            # self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input_real)
 
             if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
                 self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
@@ -478,8 +486,10 @@ class SeqUnit(object):
             # logits = self.dec_out(hidden_nt, finished)
             # # logits = self.dec_out(hidden_nt_cond, finished)
             # o_dist = tf.nn.softmax(logits)
-            # # o_dist = tf.multiply(o_dist, gpt_mask_layer)
-            # # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
+            # ### vocab mask
+            # o_dist = tf.multiply(o_dist, gpt_mask_layer)
+            # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
 
 
             ### concat field pos 
@@ -583,8 +593,10 @@ class SeqUnit(object):
             # logits = self.dec_out(hidden_nt, finished)
             # # logits = self.dec_out(hidden_nt_cond, finished)
             # o_dist = tf.nn.softmax(logits)
-            # # o_dist = tf.multiply(o_dist, gpt_mask_layer)
-            # # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
+            # ### vocab mask
+            # o_dist = tf.multiply(o_dist, gpt_mask_layer)
+            # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
 
 
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
@@ -706,7 +718,7 @@ class SeqUnit(object):
                                                             self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
                                                             self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
                                                             self.decoder_rpos_input: x['dec_rpos'], self.gpt_context: x['gpt_context'],
-                                                            self.context: x['context']})
+                                                            self.context: x['context'], self.encoder_input_real: x['enc_in_real'], self.decoder_input_real: x['dec_in_real']})
 
 
             return loss, copy_gate_loss, de_conv_loss, 0
@@ -726,17 +738,18 @@ class SeqUnit(object):
                                {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'], 
                                 self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
                                 self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                                self.gpt_context: x['gpt_context'], self.context: x['context']})
+                                self.gpt_context: x['gpt_context'], self.context: x['context'], 
+                                self.encoder_input_real: x['enc_in_real'], self.decoder_input_real: x['dec_in_real']})
         return predictions, atts
 
-    def generate_beam(self, x, sess):
-        # beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
-        beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all = sess.run(
-                         [self.beam_seqs,self.beam_probs, self.cand_seqs, self.cand_probs],
-                         {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'],
-                          self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
-                          self.encoder_rpos: x['enc_rpos']})
-        return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
+    # def generate_beam(self, x, sess):
+    #     # beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
+    #     beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all = sess.run(
+    #                      [self.beam_seqs,self.beam_probs, self.cand_seqs, self.cand_probs],
+    #                      {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'],
+    #                       self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
+    #                       self.encoder_rpos: x['enc_rpos']})
+    #     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
     def save(self, path, sess):
 

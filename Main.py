@@ -47,10 +47,10 @@ tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 2, "Batch size of train set.")
 tf.app.flags.DEFINE_integer("batch_update", 22, "apply gradients after steps") # multiply batch size is real batch size
 tf.app.flags.DEFINE_integer("epoch", 5000, "Number of training epoch.")
-tf.app.flags.DEFINE_integer("source_vocab", 6976,'vocabulary size')
+tf.app.flags.DEFINE_integer("source_vocab", 50257,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2756,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
-tf.app.flags.DEFINE_integer("target_vocab", 6976,'vocabulary size')
+tf.app.flags.DEFINE_integer("target_vocab", 50257,'vocabulary size')
 tf.app.flags.DEFINE_integer("report", 100,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
@@ -79,10 +79,10 @@ processed_data_dir = root_path + FLAGS.domain + "/processed_data"
 ### bpe vocab
 enc = encoder.get_encoder("117M")
 # "<|endoftext|>": 50256
-# eos = 50256
-# empty = 28920
-eos = 6975
-empty = 5713
+eos = 50256
+empty = 28920
+# eos = 6975
+# empty = 5713
 
 
 # test phase
@@ -296,10 +296,10 @@ def main():
         with open(os.path.join('../models', FLAGS.gpt_model_name, 'hparams.json')) as f:
             hparams.override_from_dict(json.load(f))
 
-        vocab_ind = []
-        with open(os.path.join('../models', FLAGS.gpt_model_name, 'vocab_ind.txt')) as f:
-            for line in f:
-                vocab_ind.append(int(line.strip()))
+        # vocab_ind = []
+        # with open(os.path.join('../models', FLAGS.gpt_model_name, 'vocab_ind.txt')) as f:
+        #     for line in f:
+        #         vocab_ind.append(int(line.strip()))
 
         dataloader = DataLoader(processed_data_dir, FLAGS.limits, eos, empty)
         field_id2word = dataloader.fieldid2word
@@ -314,7 +314,7 @@ def main():
                         encoder_add_pos=FLAGS.encoder_pos, learning_rate=FLAGS.learning_rate,
                         use_coverage = FLAGS.use_coverage, coverage_penalty=FLAGS.coverage_penalty,
                         fieldid2word = field_id2word, copy_gate_penalty=FLAGS.copy_gate_penalty,
-                        use_copy_gate=FLAGS.use_copy_gate, gpt_hparams=hparams, gpt_out_mask=gpt_out_mask, vocab_ind=vocab_ind,
+                        use_copy_gate=FLAGS.use_copy_gate, gpt_hparams=hparams, gpt_out_mask=gpt_out_mask, vocab_ind=None,
                         empty_token=empty, stop_token=eos)
 
 

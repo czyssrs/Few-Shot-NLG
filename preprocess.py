@@ -17,8 +17,9 @@ merge_field_vocab = root_path + "human_books_songs_films_field_vocab.txt"
 ### bpe vocab
 enc = encoder.get_encoder("117M")
 # "empty": 28920
-# field_empty = 28920
-field_empty = 5713
+field_empty = 28920
+eos = 50256
+# field_empty = 5713
 
 
 def join_box(list_in):
@@ -453,40 +454,54 @@ def gen_context(domain):
     context = [root_path + domain + "/processed_data/train/train.context", 
                 root_path + domain + "/processed_data/valid/valid.context", 
                 root_path + domain + "/processed_data/test/test.context"]
-    
-    mixb_word, mixb_label, mixb_pos = [], [], []
-    for fboxes in boxes:
+
+
+    avg_len = 0
+    num = 0
+    for ind, fboxes in enumerate(boxes):
         box = open(fboxes, "r").read().strip().split('\n')
-        box_word, box_label, box_pos = [], [], []
+        context_out = open(context[ind], "w")
         for ib in box:
 
             ib = ib.replace("-lrb-", "(")
             ib = ib.replace("-rrb-", ")")
 
-            box_single_word, box_single_label, box_single_pos = [], [], []
             item = ib.split('\t')
 
             box_out_list, _ = join_box(item)
+
+            write_line = []
 
             for (this_name, this_value) in box_out_list:
 
                 if '<none>' in this_value:
                     continue
 
-                this_value = " " + this_value
 
-                if this_name != "name":
-                    context_name = this_name.replace("_", " ")
+                if this_name == "name":
+                    to_write = this_value + " ,"
 
-                # this_value = this_value.replace("-lrb-", "(")
-                # this_value = this_value.replace("-rrb-", ")")
+                else:
 
-                tokens, tokens_original = enc.encode(this_value)
+                    write_value = " " + this_value
 
-                for ind, each_token in enumerate(tokens_original):
-                    box_single_word.append(each_token)
-                    box_single_label.append(this_name)
-                    box_single_pos.append(ind + 1  if ind + 1<=30 else 30)
+                    write_name = " " + this_name.replace("_", " ")
+
+                    to_write = write_name + " :" + write_value + " ,"
+
+                tokens, tokens_original = enc.encode(to_write)
+
+                write_line.extend(tokens)
+
+            avg_len += len(write_line)
+            num += 1
+            context_out.write(" ".join([str(tmp) for tmp in write_line]) + "\n")
+
+        context_out.close()
+
+        print (float(avg_len) / num)
+
+
 
 
 
@@ -847,6 +862,7 @@ def get_train_vocab_bpe(domain):
     '''
 
     summary_in = root_path + domain + '/original_data/train.summary'
+    box_in = root_path + domain + '/original_data/train.box'
     out_vocab = root_path + domain + '/processed_data/vocab_local.txt'
 
     vocab = []
@@ -861,7 +877,43 @@ def get_train_vocab_bpe(domain):
             for token in tokens:
                 if token not in vocab:
                     vocab.append(token)
+
+    with open(box_in) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+
+            out_list, sorted_by_second = join_box(line_list)
+
+            for (this_name, this_value) in out_list:
+
+                bpe_in = " " + this_name.replace("_", " ")
+
+                tokens, tokens_original = enc.encode(bpe_in)
+
+                for token in tokens:
+                    if token not in vocab:
+                        vocab.append(token)
+
+
+                if this_name != "name":
+                    bpe_in = " " + this_value
+                else:
+                    bpe_in = this_value
+
+
+                tokens, tokens_original = enc.encode(bpe_in)
+
+                for token in tokens:
+                    if token not in vocab:
+                        vocab.append(token)
             
+
+    if field_empty not in vocab:
+        vocab.append(field_empty)
+    if eos not in vocab:
+        vocab.append(eos)
+
+
 
     print (len(vocab))
 
@@ -910,10 +962,12 @@ def preprocess(domain):
 
 
 
+
+
 def make_dirs(domain):
-    os.mkdir(root_path + domain + "/results/")
-    os.mkdir(root_path + domain + "/results/res/")
-    os.mkdir(root_path + domain + "/results/evaluation/")
+    # os.mkdir(root_path + domain + "/results/")
+    # os.mkdir(root_path + domain + "/results/res/")
+    # os.mkdir(root_path + domain + "/results/evaluation/")
     os.mkdir(root_path + domain + "/processed_data/")
     os.mkdir(root_path + domain + "/processed_data/train/")
     os.mkdir(root_path + domain + "/processed_data/test/")
@@ -923,10 +977,12 @@ def make_dirs(domain):
 
 if __name__ == '__main__':
     domain = sys.argv[1]
-    make_dirs(domain)
-    preprocess(domain)
-    check_generated_box(domain)
-    print("check done")
+    # make_dirs(domain)
+    # preprocess(domain)
+    # check_generated_box(domain)
+    # print("check done")
+
+    gen_context(domain)
 
 
 
