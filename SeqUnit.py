@@ -518,6 +518,8 @@ class SeqUnit(object):
 
             # final_dists = out_dist + attn_dists_projected
             final_dists = out_dist + (1 - p_gen) * attn_dists_projected
+            # ### if only gpt?
+            # final_dists = o_dist
 
             copy_mask = tf.gather_nd(self.copy_gate_mask, collect_ind)
 
@@ -610,6 +612,7 @@ class SeqUnit(object):
             att_dist = (1 - p_gen) * o_weight # batch * len
 
             ### mask previous
+
             att_dist *= att_mask
 
 
@@ -622,7 +625,8 @@ class SeqUnit(object):
 
             final_dists = out_dist + attn_dists_projected
 
-            # final_dists = out_dist
+            # # ### if only gpt?
+            # final_dists = o_dist
 
 
             ### coverage

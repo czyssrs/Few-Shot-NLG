@@ -20,16 +20,16 @@ from util import *
 
 
 tf.app.flags.DEFINE_string("gpt_model_name",'117M','model name of gpt2')
-tf.app.flags.DEFINE_string("domain",'humans_tune','domain name')
+tf.app.flags.DEFINE_string("domain",'humans','domain name')
 
-tf.app.flags.DEFINE_boolean("use_coverage", True,'use coverage or not')
-tf.app.flags.DEFINE_float("coverage_penalty", 2.0,'coverage loss penalty')
+tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
+tf.app.flags.DEFINE_float("coverage_penalty", 0.02,'coverage loss penalty')
 
 tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
-tf.app.flags.DEFINE_float("copy_gate_penalty", 0.01, 'copy gate loss penalty')
+tf.app.flags.DEFINE_float("copy_gate_penalty", 0.1, 'copy gate loss penalty')
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
-tf.app.flags.DEFINE_string("load",'0','load directory') # BBBBBESTOFAll
+tf.app.flags.DEFINE_string("load",'0','load directory')
 tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
 
 tf.app.flags.DEFINE_boolean("dual_attention", True,'dual attention layer or normal attention')
@@ -51,10 +51,10 @@ tf.app.flags.DEFINE_integer("source_vocab", 50257,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2756,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 50257,'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 100,'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report", 50,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
-tf.app.flags.DEFINE_integer("report_loss", 30,'report loss results after some steps')
+tf.app.flags.DEFINE_integer("report_loss", 20,'report loss results after some steps')
 
 FLAGS = tf.app.flags.FLAGS
 last_best = 0.0

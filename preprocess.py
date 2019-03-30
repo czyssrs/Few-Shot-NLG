@@ -480,6 +480,7 @@ def gen_context(domain):
 
                 if this_name == "name":
                     to_write = this_value + " ,"
+                    # to_write = "name ,"
 
                 else:
 
@@ -488,6 +489,7 @@ def gen_context(domain):
                     write_name = " " + this_name.replace("_", " ")
 
                     to_write = write_name + " :" + write_value + " ,"
+                    # to_write = write_name + " ,"
 
                 tokens, tokens_original = enc.encode(to_write)
 
@@ -960,6 +962,9 @@ def preprocess(domain):
     print("get vocab for train set")
     get_train_vocab_bpe(domain)
 
+    print("generate prefix table")
+    gen_context(domain)
+
 
 
 
@@ -975,14 +980,13 @@ def make_dirs(domain):
     os.mkdir(root_path + domain + "/processed_data/test/test_split_for_rouge/")
     os.mkdir(root_path + domain + "/processed_data/valid/valid_split_for_rouge/")
 
+
 if __name__ == '__main__':
     domain = sys.argv[1]
-    # make_dirs(domain)
-    # preprocess(domain)
-    # check_generated_box(domain)
-    # print("check done")
-
-    gen_context(domain)
+    make_dirs(domain)
+    preprocess(domain)
+    check_generated_box(domain)
+    print("check done")
 
 
 
