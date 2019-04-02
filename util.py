@@ -15,7 +15,7 @@ term_width = int(term_width)
 
 #### by hongmin
 def bleu_score(labels_file, predictions_path):
-    bleu_script = '/scratch/home/zhiyu/wiki2bio/wikitobio/multi-bleu.perl'
+    bleu_script = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'multi-bleu.perl')
     try:
       with io.open(predictions_path, encoding="utf-8", mode="r") as predictions_file:
         bleu_out = subprocess.check_output(

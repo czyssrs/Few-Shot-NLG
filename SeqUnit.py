@@ -92,6 +92,7 @@ class SeqUnit(object):
         self.decoder_rpos_input = tf.placeholder(tf.int32, [None, None])
 
 
+        # ENCODER LSTM
         with tf.variable_scope(scope_name):
             if self.fgate_enc:
                 print ('field-gated encoder LSTM')
@@ -108,8 +109,7 @@ class SeqUnit(object):
 
         self.batch_size = tf.shape(self.decoder_input)[0]
 
-
-
+        # DECODER GPT
         with tf.device("/gpu:1"):
             ### start with context tokens of domain
             ### start reuse of gpt
@@ -127,42 +127,42 @@ class SeqUnit(object):
                 self.embedding = tf.get_variable('wte', [self.gpt_hparams.n_vocab, self.gpt_hparams.n_embd])
 
 
-    # with tf.device("/gpu:1"):
-        with tf.variable_scope(scope_name):
+        with tf.device("/gpu:1"):
+            with tf.variable_scope(scope_name):
 
-            self.field_id2word = tf.constant(fieldid2word)
+                self.field_id2word = tf.constant(fieldid2word)
 
-            self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
-            self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
+                self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
+                self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
 
-            if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
-                self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
-                self.field_embed = tf.reduce_mean(
-                                    tf.nn.embedding_lookup(self.embedding, self.field_word), 2)
+                if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
+                    self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
+                    self.field_embed = tf.reduce_mean(
+                                        tf.nn.embedding_lookup(self.embedding, self.field_word), 2)
 
-                self.field_pos_embed = self.field_embed
+                    self.field_pos_embed = self.field_embed
 
 
-            if self.position_concat or self.encoder_add_pos or self.decoder_add_pos: # True
-                self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
-                self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
-                self.pos_embed = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
-                self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
-                if self.encoder_add_pos or self.decoder_add_pos: # True
-                    self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
+                if self.position_concat or self.encoder_add_pos or self.decoder_add_pos: # True
+                    self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
+                    self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
+                    self.pos_embed = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
+                    self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
+                    if self.encoder_add_pos or self.decoder_add_pos: # True
+                        self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
 
-            self.field_word_dec = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_input) # batch * dec_len * 3
-            self.field_embed_dec = tf.reduce_mean(
-                                    tf.nn.embedding_lookup(self.embedding, self.field_word_dec), 2)
+                self.field_word_dec = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_input) # batch * dec_len * 3
+                self.field_embed_dec = tf.reduce_mean(
+                                        tf.nn.embedding_lookup(self.embedding, self.field_word_dec), 2)
 
-            self.pos_embed_dec = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_input)
-            self.rpos_embed_dec = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_input)
+                self.pos_embed_dec = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_input)
+                self.rpos_embed_dec = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_input)
 
-            ### decoder plus start token
-            self.decoder_field_pos_emb = tf.concat([self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
-            field_pos_embed_size = tf.shape(self.decoder_field_pos_emb)[2]
-            field_pos_embed_zeros = tf.zeros([self.batch_size, 1, field_pos_embed_size])
-            self.decoder_field_pos_emb = tf.concat([field_pos_embed_zeros, self.decoder_field_pos_emb], 1) # dec_len + 1
+                ### decoder plus start token
+                self.decoder_field_pos_emb = tf.concat([self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
+                field_pos_embed_size = tf.shape(self.decoder_field_pos_emb)[2]
+                field_pos_embed_zeros = tf.zeros([self.batch_size, 1, field_pos_embed_size])
+                self.decoder_field_pos_emb = tf.concat([field_pos_embed_zeros, self.decoder_field_pos_emb], 1) # dec_len + 1
 
 
 
@@ -310,20 +310,45 @@ class SeqUnit(object):
 
 
     def step_gpt(self, hparams, tokens, batch_size, past=None):
-        # with tf.device("/gpu:2"):
-        lm_output = model(hparams=hparams, X=tokens, past=past, reuse=tf.AUTO_REUSE)
+        """
+        GPT2 model is imported here, as defined in model.py
+        Args:
+            hparams: Input parameters of the GPT architecture
+            tokens: input tokens
+            batch_size: batch size
+            past: #TODO
 
-        logits = lm_output['logits'][:, :, :hparams.n_vocab]
-        presents = lm_output['present']
-        hidden = lm_output['hidden']
-        presents.set_shape(past_shape(hparams=hparams, batch_size=batch_size))
-        return {
-            'logits': logits, # [batch, sequence, hparams.n_vocab]
-            'presents': presents,
-            'hidden': hidden
-        }
+        Returns: Output of transformer - logits in output sequence
+
+        """
+
+        with tf.device("/gpu:1"):
+            lm_output = model(hparams=hparams, X=tokens, past=past, reuse=tf.AUTO_REUSE)
+
+            logits = lm_output['logits'][:, :, :hparams.n_vocab]
+            presents = lm_output['present']
+            hidden = lm_output['hidden']
+            presents.set_shape(past_shape(hparams=hparams, batch_size=batch_size))
+            return {
+                'logits': logits, # [batch, sequence, hparams.n_vocab]
+                'presents': presents,
+                'hidden': hidden
+            }
 
     def decoder_t(self, initial_state, inputs, inputs_len, x0, past0, hidden0):
+        """
+        Decoder for training
+        Args:
+            initial_state: Initial state of decoder
+            inputs: ground truth inputs
+            inputs_len: length of ground truth input
+            x0: #TODO
+            past0: #TODO
+            hidden0: #TODO
+
+        Returns:
+
+        """
         ### gather p_gen and att_weights
         batch_size = tf.shape(self.decoder_input)[0]
         max_time = tf.shape(self.decoder_input)[1]
@@ -342,6 +367,22 @@ class SeqUnit(object):
         covloss0 = 0.0
 
         def loop_fn(t, x_t, past, hidden, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
+            """
+            Decoding loop
+            Args:
+                t: sequence index
+                x_t: input at location t
+                past: decoded string so far
+                hidden: #TODO
+                emit_ta: TODO
+                emit_gate:  TODO
+                coverage_att_sum: TODO
+                covloss: TODO
+                finished: TODO
+
+            Returns:
+
+            """
 
 
             with tf.device("/gpu:1"):

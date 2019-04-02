@@ -93,9 +93,6 @@ class dualAttentionWrapper(object):
         coverage_penalty = tf.exp(coverage_penalty - tf.reduce_max(coverage_penalty, reduction_indices=0, keepdims=True))
         weights = tf.divide(weights * coverage_penalty, (1e-6 + tf.reduce_sum(weights * coverage_penalty, reduction_indices=0, keepdims=True))) # len * batch * 1
 
-
-
-        
         context = tf.reduce_sum(hs * weights, reduction_indices=0)  # batch * input_size
         # out = tf.tanh(tf.nn.xw_plus_b(tf.concat([context, x], -1), self.Wo, self.bo))
 
