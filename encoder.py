@@ -99,7 +99,15 @@ class Encoder:
         for token in re.findall(self.pat, text):
             # print (token)
             token = ''.join(self.byte_encoder[b] for b in token.encode('utf-8'))
-            bpe_tokens.extend(self.encoder[bpe_token] for bpe_token in self.bpe(token).split(' '))
+            ### handle oov
+            for bpe_token in self.bpe(token).split(' '):
+                if bpe_token in self.encoder:
+                    bpe_tokens.append(self.encoder[bpe_token])
+                else:
+                    bpe_tokens.append(self.encoder["empty"])
+
+
+            # bpe_tokens.extend(self.encoder[bpe_token] for bpe_token in self.bpe(token).split(' '))
             bpe_token_original.extend(bpe_token for bpe_token in self.bpe(token).split(' '))
         return bpe_tokens, bpe_token_original
 

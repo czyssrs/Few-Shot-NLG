@@ -187,7 +187,12 @@ def test():
 
 	test1 = " name"
 	# test1 = [10641, 829, 348, 856, 88, 357, 1248, 3270, 1377, 15533, 1267, 373, 281, 46932, 16716, 10099, 290, 1772, 764]
-	test1 = [10641, 829, 348, 856, 88, 1149, 829, 348, 856, 88, 1248, 3270, 12, 1129, 1270, 764]
+	# 10641 829 348 856 88 357 1248 3270 1377 15533 1267 373 281 46932 16716 10099 290 1772 764
+	# test1 = [12427, 17266, 32790, 72, 38325]
+	# test1 = [35626, 266, 13, 6314, 2162, 4082, 3128, 1058, 1511, 46593, 346, 24217, 2162, 29835, 1058, 45630, \
+	# 272, 2162, 9901, 1058, 410, 4066, 34508, 6403, 2162, 2214, 1058, 3230, 12446, 2162, 435, 2611, 26910, 1058, \
+	# 6403, 286, 686, 35983, 2162, 3172, 66, 21231, 1058, 277, 2162, 3172, 66, 4686, 1058, 279, 2127, 22515, 2162, 2708, 3670, 1058, 1931, 291, 6314, 2162]
+	test1 = [3672, 837, 2939, 837, 8305, 837, 13755, 837, 4082, 3128, 837, 4082, 1295, 837, 1918, 3128, 837, 1918, 1295, 837, 16731, 837, 3397, 837, 2708, 3670, 837]
 	# test1 = [889, 1289]
 
 
@@ -212,6 +217,187 @@ def get_vars():
 	print_tensors_in_checkpoint_file(latest_ckp, all_tensors=True, tensor_name='')
 
 
+def get_train_vocab(box_in, summary_in, out_vocab):
+	'''
+	get vocab for few shot baselines
+	'''
+
+	vocab = {}
+
+	with open(box_in) as f:
+		for line in f:
+			line_list = line.strip().split()
+			for item in line_list:
+				if ":" in item:
+					field = item.split(":")[0]
+					value = item.split(":")[1]
+
+					if field != "" and value != "":
+						if "_" in field:
+							field = field.split("_")[0]
+
+						if field not in vocab:
+							vocab[field] = 0
+						vocab[field] += 1
+
+						if value not in vocab:
+							vocab[value] = 0
+						vocab[value] += 1
+
+
+
+	with open(summary_in) as f:
+		for line in f:
+			line_list = line.strip().split()
+			for word in line_list:
+				if word not in vocab:
+					vocab[word] = 0
+				vocab[word] += 1
+
+
+	sorted_x = sorted(vocab.items(), key=operator.itemgetter(1), reverse=True)
+
+
+	ind = 0
+	with open(out_vocab, "w") as f:
+		for tup in sorted_x:
+			if tup[1] > 0:
+				f.write(tup[0] + "\t" + str(ind) + "\n")
+				ind += 1
+
+
+	print (len(sorted_x))
+	print (ind)
+
+
+
+def get_train_vocab_bpe_mask(summary_in, out_vocab):
+	'''
+	get train vocab of gpt data. return the mask
+	'''
+
+	vocab = []
+	enc = encoder.get_encoder("117M")
+	vocab_len = 50257
+
+	with open(summary_in) as f:
+		for line in f:
+			line = line.strip()
+			tokens, tokens_original = enc.encode(line)
+
+			for token in tokens:
+				if token not in vocab:
+					vocab.append(token)
+			
+
+	print (len(vocab))
+
+
+	res_mask = []
+	for ind in range(0, 50257):
+		if ind in vocab:
+			res_mask.append(str(1))
+		else:
+			res_mask.append(str(0))
+
+
+	with open(out_vocab, "w") as f:
+		f.write(" ".join(res_mask))
+
+
+
+def get_train_vocab_bpe(summary_in, box_in, json_ori_in, json_out, vocab_ind_out):
+	'''
+	get train vocab of gpt data. return the mask
+	'''
+
+	vocab = []
+	enc = encoder.get_encoder("117M_original")
+	vocab_len = 50257
+
+	with open(summary_in) as f:
+		for line in f:
+			line = line.strip()
+			tokens, tokens_original = enc.encode(line)
+
+			for token in tokens:
+				if token not in vocab:
+					vocab.append(token)
+			
+
+	with open(box_in) as f:
+		for line in f:
+			line_list = line.strip().split("\t")
+
+			out_list, sorted_by_second = join_box(line_list)
+
+			for (this_name, this_value) in out_list:
+
+				bpe_in = " " + this_name.replace("_", " ")
+
+				tokens, tokens_original = enc.encode(bpe_in)
+
+				for token in tokens:
+					if token not in vocab:
+						vocab.append(token)
+
+
+				if this_name != "name":
+					bpe_in = " " + this_value
+				else:
+					bpe_in = this_value
+
+
+				tokens, tokens_original = enc.encode(bpe_in)
+
+				for token in tokens:
+					if token not in vocab:
+						vocab.append(token)
+
+	print (len(vocab))
+
+
+	res_vocab = []
+	for ind in range(0, 50257):
+		if ind < 100:
+			res_vocab.append(ind)
+		elif ind in vocab:
+			res_vocab.append(ind)
+		elif ind == 28920:
+			res_vocab.append(ind)
+		elif ind == 50256:
+			res_vocab.append(ind)
+
+
+	# if 28920 not in res_vocab:
+	# 	res_vocab.append(28920)
+
+	# if 50256 not in res_vocab:
+	# 	res_vocab.append(50256)
+
+	with open(json_ori_in) as f:
+		tmp = f.readline().strip()
+		vocab_tmp = json.loads(tmp)
+
+	vocab_ori = {value: key for key, value in vocab_tmp.items()}
+
+	out_vocab = {}
+	for ind_new, ind in enumerate(res_vocab):
+		token = vocab_ori[ind]
+		out_vocab[token] = ind_new
+	
+	print (len(out_vocab))
+	print (out_vocab["empty"])
+	print (out_vocab["<|endoftext|>"])
+
+
+	with open(json_out, "w") as f:
+		f.write(json.dumps(out_vocab))
+
+	with open(vocab_ind_out, "w") as f:
+		for ind in res_vocab:
+			f.write(str(ind) + "\n")
+
 
 
 if __name__=='__main__':
@@ -224,11 +410,11 @@ if __name__=='__main__':
 
 	test()
 
-	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/full.box"
-	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/full.summary"
+	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.box"
+	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.summary"
 
-	# box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/original.box"
-	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data_original/original.summary"
+	# box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data/test_full.box"
+	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data/test_full.summary"
 
 	# convert_bpe(box_in, summary_in, box_out, summary_out)
 
@@ -236,6 +422,23 @@ if __name__=='__main__':
 	# print(enc.encoder['<|endoftext|>'])
 
 	# get_vars()
+
+
+
+	# ### generate vocab for baseline
+	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt_baseline_emb_pointer/humans/original_data/train_1000.box"
+	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt_baseline_emb_pointer/humans/original_data/train_1000.summary"
+	# out_vocab = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt_baseline_emb_pointer/humans_vocab_1000.txt"
+	# get_train_vocab(box_in, summary_in, out_vocab)
+
+
+	# ### generate mask for gpt
+	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_tune/original_data/train_1000.summary"
+	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_tune/original_data/train_1000.box"
+	# json_ori_in = "/scratch/home/zhiyu/wiki2bio/models/117M_original/encoder.json"
+	# vocab_ind_out = "/scratch/home/zhiyu/wiki2bio/models/117M/vocab_ind.txt"
+	# json_out = "/scratch/home/zhiyu/wiki2bio/models/117M/encoder.json"
+	# get_train_vocab_bpe(summary_in, box_in, json_ori_in, json_out, vocab_ind_out)
 
 
 

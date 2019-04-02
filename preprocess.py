@@ -18,6 +18,8 @@ merge_field_vocab = root_path + "human_books_songs_films_field_vocab.txt"
 enc = encoder.get_encoder("117M")
 # "empty": 28920
 field_empty = 28920
+eos = 50256
+# field_empty = 5713
 
 
 def join_box(list_in):
@@ -185,6 +187,10 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
 
     for box, summary in tqdm(zip(lines_box, lines_summary)):
 
+
+        box = box.replace("-lrb-", "(")
+        box = box.replace("-rrb-", ")")
+
         box_list = box.strip().split("\t")
         box_out_list, box_field_list = join_box(box_list)
 
@@ -340,8 +346,12 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
                                 start = 30
                             if end > 30:
                                 end = 30
-                            out_pos_bpe[past_len + it] = start
-                            out_rpos_bpe[past_len + it] = end
+                            if past_len + it >= len(out_pos_bpe):
+                                this_id = past_len
+                            else:
+                                this_id = past_len + it
+                            out_pos_bpe[this_id] = start
+                            out_rpos_bpe[this_id] = end
 
 
 
@@ -435,6 +445,71 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
     out_p.close()
     out_rp.close()
 
+
+def gen_context(domain):
+    '''
+    trail: generate context for gpt
+    '''
+    boxes = [root_path + domain + "/original_data/train.box", root_path + domain + "/original_data/valid.box", root_path + domain + "/original_data/test.box"]
+    context = [root_path + domain + "/processed_data/train/train.context", 
+                root_path + domain + "/processed_data/valid/valid.context", 
+                root_path + domain + "/processed_data/test/test.context"]
+
+
+    avg_len = 0
+    num = 0
+    for ind, fboxes in enumerate(boxes):
+        box = open(fboxes, "r").read().strip().split('\n')
+        context_out = open(context[ind], "w")
+        for ib in box:
+
+            ib = ib.replace("-lrb-", "(")
+            ib = ib.replace("-rrb-", ")")
+
+            item = ib.split('\t')
+
+            box_out_list, _ = join_box(item)
+
+            write_line = []
+
+            for (this_name, this_value) in box_out_list:
+
+                if '<none>' in this_value:
+                    continue
+
+
+                if this_name == "name":
+                    to_write = this_value + " ,"
+                    # to_write = "name ,"
+
+                else:
+
+                    write_value = " " + this_value
+
+                    write_name = " " + this_name.replace("_", " ")
+
+                    to_write = write_name + " :" + write_value + " ,"
+                    # to_write = write_name + " ,"
+
+                tokens, tokens_original = enc.encode(to_write)
+
+                write_line.extend(tokens)
+
+            avg_len += len(write_line)
+            num += 1
+            context_out.write(" ".join([str(tmp) for tmp in write_line]) + "\n")
+
+        context_out.close()
+
+        print (float(avg_len) / num)
+
+
+
+
+
+
+
+
 def split_infobox(domain):
     """
     extract box content, field type and position information from infoboxes from original_data
@@ -458,6 +533,10 @@ def split_infobox(domain):
         box = open(fboxes, "r").read().strip().split('\n')
         box_word, box_label, box_pos = [], [], []
         for ib in box:
+
+            ib = ib.replace("-lrb-", "(")
+            ib = ib.replace("-rrb-", ")")
+
             box_single_word, box_single_label, box_single_pos = [], [], []
             item = ib.split('\t')
 
@@ -471,8 +550,8 @@ def split_infobox(domain):
                 if this_name != "name":
                     this_value = " " + this_value
 
-                this_value = this_value.replace("-lrb-", "(")
-                this_value = this_value.replace("-rrb-", ")")
+                # this_value = this_value.replace("-lrb-", "(")
+                # this_value = this_value.replace("-rrb-", ")")
 
                 tokens, tokens_original = enc.encode(this_value)
 
@@ -755,7 +834,15 @@ def table2id(domain):
         for line_sum, line_val in zip(lines_sum, lines_val):
 
             line_val_list = line_val.strip().split()
-            res_val_list = [str(enc.encoder[bpe_token]) for bpe_token in line_val_list]
+            res_val_list = []
+            for bpe_token in line_val_list:
+                if bpe_token in enc.encoder:
+                    res_val_list.append(str(enc.encoder[bpe_token]))
+                else:
+                    res_val_list.append(str(enc.encoder["empty"]))
+
+
+            # res_val_list = [str(enc.encoder[bpe_token]) for bpe_token in line_val_list]
             fvalo.write(" ".join(res_val_list) + "\n")
 
 
@@ -769,6 +856,80 @@ def table2id(domain):
 
         fsumo.close()
         fvalo.close()
+
+
+def get_train_vocab_bpe(domain):
+    '''
+    get train vocab of gpt data. return the mask
+    '''
+
+    summary_in = root_path + domain + '/original_data/train.summary'
+    box_in = root_path + domain + '/original_data/train.box'
+    out_vocab = root_path + domain + '/processed_data/vocab_local.txt'
+
+    vocab = []
+    enc = encoder.get_encoder("117M")
+    vocab_len = 50257
+
+    with open(summary_in) as f:
+        for line in f:
+            line = line.strip()
+            tokens, tokens_original = enc.encode(line)
+
+            for token in tokens:
+                if token not in vocab:
+                    vocab.append(token)
+
+    with open(box_in) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+
+            out_list, sorted_by_second = join_box(line_list)
+
+            for (this_name, this_value) in out_list:
+
+                bpe_in = " " + this_name.replace("_", " ")
+
+                tokens, tokens_original = enc.encode(bpe_in)
+
+                for token in tokens:
+                    if token not in vocab:
+                        vocab.append(token)
+
+
+                if this_name != "name":
+                    bpe_in = " " + this_value
+                else:
+                    bpe_in = this_value
+
+
+                tokens, tokens_original = enc.encode(bpe_in)
+
+                for token in tokens:
+                    if token not in vocab:
+                        vocab.append(token)
+            
+
+    if field_empty not in vocab:
+        vocab.append(field_empty)
+    if eos not in vocab:
+        vocab.append(eos)
+
+
+
+    print (len(vocab))
+
+
+    res_mask = []
+    for ind in range(0, 50257):
+        if ind in vocab:
+            res_mask.append(str(1))
+        else:
+            res_mask.append(str(0))
+
+
+    with open(out_vocab, "w") as f:
+        f.write(" ".join(res_mask))
 
 
 
@@ -798,6 +959,14 @@ def preprocess(domain):
     duration = time.time() - time_start
     print("idlization finished in %.3f seconds" % float(duration))
 
+    print("get vocab for train set")
+    get_train_vocab_bpe(domain)
+
+    print("generate prefix table")
+    gen_context(domain)
+
+
+
 
 
 def make_dirs(domain):
@@ -811,9 +980,10 @@ def make_dirs(domain):
     os.mkdir(root_path + domain + "/processed_data/test/test_split_for_rouge/")
     os.mkdir(root_path + domain + "/processed_data/valid/valid_split_for_rouge/")
 
+
 if __name__ == '__main__':
     domain = sys.argv[1]
-    # make_dirs(domain)
+    make_dirs(domain)
     preprocess(domain)
     check_generated_box(domain)
     print("check done")
