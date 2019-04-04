@@ -4,6 +4,7 @@ from tensorflow.contrib.training import HParams
 
 def default_hparams():
     return HParams(
+        n_vocab_original=0,
         n_vocab=0,
         n_ctx=1024,
         n_embd=768,
@@ -143,35 +144,75 @@ def positions_for(tokens, past_length):
     nsteps = tf.shape(tokens)[1]
     return expand_tile(past_length + tf.range(nsteps), batch_size)
 
+def gpt_emb_init(scope, hparams):
+    with tf.variable_scope(scope):
+        wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
+                             initializer=tf.random_normal_initializer(stddev=0.02))
+
+# def gpt_emb_init_tune(scope, hparams, select_ind):
+#     with tf.variable_scope(scope):
+
+#         wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
+#                              initializer=tf.random_normal_initializer(stddev=0.02))
+
+#         # selected = tf.nn.embedding_lookup(wte, select_ind)
+
+#         wte_tune = tf.get_variable('wte_tune', initializer=wte, trainable=False)
+
+def gpt_emb_init_tune(scope, hparams):
+    with tf.variable_scope(scope):
+
+        wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
+                             initializer=tf.random_normal_initializer(stddev=0.02))
+
+        # selected = tf.nn.embedding_lookup(wte, select_ind)
+
+        wte_tune = tf.get_variable('wte_tune', initializer=wte, trainable=False)
+
 
 def model(hparams, X, past=None, scope='model', reuse=False):
     with tf.variable_scope(scope, reuse=reuse):
-        results = {}
-        batch, sequence = shape_list(X)
 
-        wpe = tf.get_variable('wpe', [hparams.n_ctx, hparams.n_embd],
-                             initializer=tf.random_normal_initializer(stddev=0.01))
-        wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
-                             initializer=tf.random_normal_initializer(stddev=0.02))
-        past_length = 0 if past is None else tf.shape(past)[-2]
-        h = tf.gather(wte, X) + tf.gather(wpe, positions_for(X, past_length))
+        with tf.device("/gpu:1"):
+            results = {}
+            batch, sequence = shape_list(X)
 
-    # Transformer
-
-        presents = []
-        pasts = tf.unstack(past, axis=1) if past is not None else [None] * hparams.n_layer
-        assert len(pasts) == hparams.n_layer
-        for layer, past in enumerate(pasts):
-            h, present = block(h, 'h%d' % layer, past=past, hparams=hparams)
-            presents.append(present)
-        results['present'] = tf.stack(presents, axis=1) # [batch, layer, 2, heads, sequence, features], where 2 is [k, v]
-        h = norm(h, 'ln_f')
+            wpe = tf.get_variable('wpe', [hparams.n_ctx, hparams.n_embd],
+                                 initializer=tf.random_normal_initializer(stddev=0.01))
 
 
-        # Language model loss.  Do tokens <n predict token n?
-        h_flat = tf.reshape(h, [batch*sequence, hparams.n_embd])
-        logits = tf.matmul(h_flat, wte, transpose_b=True)
-        logits = tf.reshape(logits, [batch, sequence, hparams.n_vocab])
-        results['logits'] = logits
-        results['hidden'] = h
-        return results
+            # wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
+            #                      initializer=tf.random_normal_initializer(stddev=0.02))
+
+            wte_tune = tf.get_variable('wte_tune', [hparams.n_vocab, hparams.n_embd], trainable=False)
+
+
+            past_length = 0 if past is None else tf.shape(past)[-2]
+
+            # wte_emb = tf.gather(wte, X, name="wte_emb")
+            wte_emb = tf.gather(wte_tune, X, name="wte_emb")
+            wpe_emb = tf.gather(wpe, positions_for(X, past_length), name="wpe_emb")
+            h = wte_emb + wpe_emb
+
+            # h = tf.gather(wte, X) + tf.gather(wpe, positions_for(X, past_length))
+
+        with tf.device("/gpu:2"):
+            presents = []
+            pasts = tf.unstack(past, axis=1) if past is not None else [None] * hparams.n_layer
+            assert len(pasts) == hparams.n_layer
+            for layer, past in enumerate(pasts):
+                h, present = block(h, 'h%d' % layer, past=past, hparams=hparams)
+                presents.append(present)
+            results['present'] = tf.stack(presents, axis=1) # [batch, layer, 2, heads, sequence, features], where 2 is [k, v]
+            h = norm(h, 'ln_f')
+
+
+        # with tf.device("/gpu:0"):
+            # Language model loss.  Do tokens <n predict token n?
+            h_flat = tf.reshape(h, [batch*sequence, hparams.n_embd])
+            # logits = tf.matmul(h_flat, wte, transpose_b=True)
+            logits = tf.matmul(h_flat, wte_tune, transpose_b=True)
+            logits = tf.reshape(logits, [batch, sequence, hparams.n_vocab])
+            results['logits'] = logits
+            results['hidden'] = h
+            return results

@@ -12,6 +12,7 @@ from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
 from OutputUnit import OutputUnit
+from OutputUnit_gpt import OutputUnit_gpt
 
 from model import *
 
@@ -20,13 +21,19 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, empty_token=28920, stop_token=50256, max_length=90):
+                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, vocab_ind, empty_token=28920, stop_token=50256, max_length=85):
+
+
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
         source_vocab, target_vocab, field_vocab, position_vocab: vocabulary size of encoder words; decoder words; field types; position
         field_concat, position_concat: bool values, whether concat field/position embedding to word embedding for encoder inputs or not
         fgate_enc, dual_att: bool values, whether use field-gating / dual attention or not
         encoder_add_pos, decoder_add_pos: bool values, whether add position embedding to field-gating encoder / decoder with dual attention or not
+
+        ###
+        original full vocab ind
+        empty_token=28920, stop_token=50256
         '''
 
         ### caution dynamic batch size
@@ -68,6 +75,10 @@ class SeqUnit(object):
 
         self.dec_input_size = self.emb_size + field_size + 2 * pos_size
 
+        self.gpt_out_mask = gpt_out_mask
+        self.start_token = empty_token
+        self.select_ind = vocab_ind
+
         self.units = {}
         self.params = {}
 
@@ -91,6 +102,11 @@ class SeqUnit(object):
         self.decoder_pos_input = tf.placeholder(tf.int32, [None, None])
         self.decoder_rpos_input = tf.placeholder(tf.int32, [None, None])
 
+        self.context = tf.placeholder(tf.int32, [None, None])
+
+        self.encoder_input_real = tf.placeholder(tf.int32, [None, None])
+        self.decoder_input_real = tf.placeholder(tf.int32, [None, None])
+
 
         # ENCODER LSTM
         with tf.variable_scope(scope_name):
@@ -103,68 +119,104 @@ class SeqUnit(object):
             # self.dec_lstm = LstmUnit(self.hidden_size, self.emb_size, 'decoder_lstm')
             # self.dec_lstm = LstmUnit(self.hidden_size, self.dec_input_size, 'decoder_lstm')
             self.dec_out = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output')
+            self.dec_out_lstm = OutputUnit(self.hidden_size, self.target_vocab, 'decoder_output_lstm')
+
+            # self.hidden_w = tf.get_variable('hidden_w', [2*self.hidden_size, self.hidden_size])
+            # self.hidden_b = tf.get_variable('hidden_b', [self.hidden_size])
+
+
+            # self.gpt_out_mask = tf.sigmoid(
+            #                     tf.get_variable('gpt_out_mask', shape=[self.target_vocab], initializer=tf.zeros_initializer, trainable=True))
 
 
         self.units.update({'encoder_lstm': self.enc_lstm})
 
         self.batch_size = tf.shape(self.decoder_input)[0]
 
-        # DECODER GPT
-        with tf.device("/gpu:1"):
-            ### start with context tokens of domain
-            ### start reuse of gpt
-            context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context, self.batch_size)
-            logits0 = context_outputs['logits'][:, -1, :]
-            dist0 = tf.nn.softmax(logits0) # start token
-            x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
-            past0 = context_outputs['presents']
-            hidden0 = context_outputs['hidden'][:, -1, :]
 
-            # ======================================== embeddings ======================================== #
+        # gpt_emb_init_tune('model', self.gpt_hparams, tf.constant(self.select_ind))
+        gpt_emb_init_tune('model', self.gpt_hparams)
 
-            with tf.variable_scope('model', reuse=True):
-                ### use the one in gpt2
-                self.embedding = tf.get_variable('wte', [self.gpt_hparams.n_vocab, self.gpt_hparams.n_embd])
+        # with tf.device("/gpu:1"):
+        ### start with context tokens of domain
+        ### start reuse of gpt
+        # context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context, self.batch_size)
+        # self.gpt_context_in = tf.concat([self.encoder_input, self.gpt_context], 1)
+        self.gpt_context_in = tf.concat([self.context, self.gpt_context], 1)
+        context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context_in, self.batch_size)
+        # context_outputs = self.step_gpt(self.gpt_hparams, self.encoder_input, self.batch_size)
+        logits0 = context_outputs['logits'][:, -1, :]
+        dist0 = tf.nn.softmax(logits0) # start token
+        x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
+        past0 = context_outputs['presents']
+        hidden0 = context_outputs['hidden'][:, -1, :]
 
+        # gpt_emb_init('model', self.gpt_hparams)
 
-        with tf.device("/gpu:1"):
-            with tf.variable_scope(scope_name):
+        # ======================================== embeddings ======================================== #
 
-                self.field_id2word = tf.constant(fieldid2word)
-
-                self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
-                self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
-
-                if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
-                    self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
-                    self.field_embed = tf.reduce_mean(
-                                        tf.nn.embedding_lookup(self.embedding, self.field_word), 2)
-
-                    self.field_pos_embed = self.field_embed
+        with tf.variable_scope('model', reuse=True):
+            ### use the one in gpt2
+            self.embedding = tf.get_variable('wte_tune', [self.gpt_hparams.n_vocab, self.gpt_hparams.n_embd], trainable=False)
 
 
-                if self.position_concat or self.encoder_add_pos or self.decoder_add_pos: # True
-                    self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
-                    self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
-                    self.pos_embed = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
-                    self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
-                    if self.encoder_add_pos or self.decoder_add_pos: # True
-                        self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
-
-                self.field_word_dec = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_input) # batch * dec_len * 3
-                self.field_embed_dec = tf.reduce_mean(
-                                        tf.nn.embedding_lookup(self.embedding, self.field_word_dec), 2)
-
-                self.pos_embed_dec = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_input)
-                self.rpos_embed_dec = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_input)
-
-                ### decoder plus start token
-                self.decoder_field_pos_emb = tf.concat([self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
-                field_pos_embed_size = tf.shape(self.decoder_field_pos_emb)[2]
-                field_pos_embed_zeros = tf.zeros([self.batch_size, 1, field_pos_embed_size])
-                self.decoder_field_pos_emb = tf.concat([field_pos_embed_zeros, self.decoder_field_pos_emb], 1) # dec_len + 1
+            # self.en_outputs = context_outputs['hidden']
 
 
+        # with tf.variable_scope(scope_name):
+        #     proj_init = tf.transpose(self.embedding, [1,0])
+        #     self.dec_out = OutputUnit_gpt(self.hidden_size, self.target_vocab, proj_init, 'decoder_output')
+
+
+
+
+
+#        with tf.device("/gpu:1"):
+        with tf.variable_scope(scope_name):
+
+
+            self.field_id2word = tf.constant(fieldid2word)
+            self.gpt_out_mask = tf.constant(gpt_out_mask)
+
+            self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
+            self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
+
+            # self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input_real)
+            # self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input_real)
+
+            if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
+                self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
+                self.field_embed = tf.reduce_mean(
+                                    tf.nn.embedding_lookup(self.embedding, self.field_word), 2)
+
+                self.field_pos_embed = self.field_embed
+
+
+            if self.position_concat or self.encoder_add_pos or self.decoder_add_pos: # True
+                self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
+                self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
+                self.pos_embed = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
+                self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
+                if self.encoder_add_pos or self.decoder_add_pos: # True
+                    self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
+
+            self.field_word_dec = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_input) # batch * dec_len * 3
+            self.field_embed_dec = tf.reduce_mean(
+                                    tf.nn.embedding_lookup(self.embedding, self.field_word_dec), 2)
+
+            self.pos_embed_dec = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_input)
+            self.rpos_embed_dec = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_input)
+
+            ### decoder plus start token
+            self.decoder_field_pos_emb = tf.concat([self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
+            field_pos_embed_size = tf.shape(self.decoder_field_pos_emb)[2]
+            field_pos_embed_zeros = tf.zeros([self.batch_size, 1, field_pos_embed_size])
+            self.decoder_field_pos_emb = tf.concat([field_pos_embed_zeros, self.decoder_field_pos_emb], 1) # dec_len + 1
+
+
+            ### remove encoder
+            # self.en_outputs = tf.concat([self.encoder_embed, self.field_embed, self.pos_embed, self.rpos_embed], 2)
+            # self.en_outputs = tf.layers.dense(self.en_outputs, self.hidden_size)
 
 
         # if self.field_concat or self.fgate_enc:
@@ -180,6 +232,14 @@ class SeqUnit(object):
         else:
             print ('normal encoder used')
             en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len)
+
+        # ### try with gpt out as en out
+        # self.en_outputs = tf.concat([self.en_outputs, self.field_pos_embed], 2)
+
+
+        # ### remove encoder
+        # self.en_outputs = tf.concat([self.encoder_embed, self.field_embed, self.pos_embed, self.rpos_embed], 2)
+        # self.en_outputs = tf.layers.dense(self.en_outputs, self.hidden_size)
 
 
 
@@ -204,17 +264,42 @@ class SeqUnit(object):
 
         self.copy_gate_mask = tf.cast(
                         tf.greater(self.decoder_pos_input, tf.zeros_like(self.decoder_pos_input)), tf.float32)
-        self.copy_gate_mask = tf.concat([self.copy_gate_mask, tf.zeros([self.batch_size, 1], tf.float32)], 1)
+        self.copy_gate_mask = tf.concat([self.copy_gate_mask, tf.zeros([tf.shape(self.encoder_input)[0], 1], tf.float32)], 1)
 
-        # self.debug1 = tf.print(self.copy_gate_mask, [self.copy_gate_mask], summarize=1000)
+        # self.debug1 = tf.print(self.gpt_out_mask, [tf.shape(self.gpt_out_mask)], summarize=1000)
 
 
+        # ### how to condition on encoder?
+        # with tf.variable_scope(scope_name):
+        #     st_1, st_2 = en_state
+        #     cond_hidden0 = tf.concat([st_1, st_2], 1)
+        #     self.cond_hidden0 = tf.layers.dense(cond_hidden0, self.hidden_size)
+        #     self.cond_hidden0 = tf.expand_dims(self.cond_hidden0, 1)
+        #     start_len = tf.shape(self.gpt_context)[1]
+        #     self.cond_hidden0 = tf.tile(self.cond_hidden0, [1, start_len, 1])
+
+        # # decoder for training
+        # de_outputs, de_state, self.de_conv_loss, self.copy_gate = self.decoder_t(en_state, self.decoder_embed, self.decoder_len)
+        # # decoder for testing
+        # self.g_tokens, self.atts = self.decoder_g(en_state)
+
+
+        # with tf.device("/gpu:1"):
+        #     ### start with context tokens of domain
+        #     ### start reuse of gpt
+        #     # context_outputs = self.step_gpt(self.gpt_hparams, self.gpt_context, self.batch_size)
+        #     context_outputs = self.step_gpt(self.gpt_hparams, self.encoder_input, self.batch_size)
+        #     logits0 = context_outputs['logits'][:, -1, :]
+        #     dist0 = tf.nn.softmax(logits0) # start token
+        #     x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
+        #     past0 = context_outputs['presents']
+        #     hidden0 = context_outputs['hidden'][:, -1, :]
 
 
         # decoder for training
-        de_outputs, _, self.de_conv_loss, self.copy_gate_loss = self.decoder_t(en_state, self.decoder_input, self.decoder_len, x0, past0, hidden0)
+        de_outputs, _, self.de_conv_loss, self.copy_gate_loss = self.decoder_t(self.decoder_input, self.decoder_len, x0, past0, hidden0)
         # decoder for testing
-        self.g_tokens, self.atts = self.decoder_g(en_state, x0, past0, hidden0)
+        self.g_tokens, self.atts = self.decoder_g(x0, past0, hidden0)
         # self.beam_seqs, self.beam_probs, self.cand_seqs, self.cand_probs = self.decoder_beam(en_state, beam_size)
         
 
@@ -245,8 +330,7 @@ class SeqUnit(object):
 
         self.de_conv_loss *= self.coverage_penalty
 
-        ### maximize where copy
-        self.copy_gate_loss = (self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_loss))
+        self.copy_gate_loss = self.copy_gate_penalty * tf.reduce_sum(self.copy_gate_loss)
 
         if self.use_copy_gate:
             self.mean_loss += self.copy_gate_loss
@@ -256,8 +340,10 @@ class SeqUnit(object):
 
 
 
-        # tvars = tf.trainable_variables()
-        train_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='seq2seq')
+        # train_var = tf.trainable_variables()
+        # train_var = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='seq2seq')
+
+        train_params = tf.trainable_variables()
 
 
         ### train enc-dec
@@ -268,11 +354,49 @@ class SeqUnit(object):
             # self.train_op = optimizer.apply_gradients(zip(grads, tvars), global_step=self.global_step)
 
             self.global_step = tf.Variable(0, name='global_step', trainable=False)
-            grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, train_var), self.grad_clip)
-            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
-            self.train_op = optimizer.apply_gradients(zip(grads, train_var), global_step=self.global_step)
+            self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, train_params, colocate_gradients_with_ops=True), self.grad_clip)
+        #     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        #     self.train_op = optimizer.apply_gradients(zip(self.grads, train_params), global_step=self.global_step)
+
+        # self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
+
+
+
+        ### accumulate gradient
+        # with tf.variable_scope(scope_name):
+            self.opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+
+            self.acc_gradients = list(map(lambda param: tf.get_variable(param.name.split(":")[0],
+                                                                    param.get_shape(), param.dtype,
+                                                                    tf.constant_initializer(0.0), trainable=False),
+                                                                    train_params))
+
+            self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+            self._cov_loss = tf.get_variable("acc_cov_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+            self._gate_loss = tf.get_variable("acc_gate_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+
+            # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
+            acc_opt = tf.train.GradientDescentOptimizer(-1.0)
+            self.accumulate_gradients = acc_opt.apply_gradients(zip(self.grads, self.acc_gradients))
+            self.acc_loss = acc_opt.apply_gradients([(self.mean_loss, self._loss)])
+            self.acc_cov_loss = acc_opt.apply_gradients([(self.de_conv_loss, self._cov_loss)])
+            self.acc_gate_loss = acc_opt.apply_gradients([(self.copy_gate_loss, self._gate_loss)])
+
+
+            # train update
+            self.update = self.opt.apply_gradients(
+                zip(list(map(lambda v: v.value(), self.acc_gradients)), train_params), global_step=self.global_step)
+
+            self.reset = list(map(lambda param: param.initializer, self.acc_gradients))
+            self.reset.append(self._loss.initializer)
+            self.reset.append(self._cov_loss.initializer)
+            self.reset.append(self._gate_loss.initializer)
+
 
         self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
+
+
+
 
 
     def fgate_encoder(self, inputs, fields, inputs_len):
@@ -322,18 +446,14 @@ class SeqUnit(object):
 
         """
 
-        with tf.device("/gpu:1"):
-            lm_output = model(hparams=hparams, X=tokens, past=past, reuse=tf.AUTO_REUSE)
+        lm_output = model(hparams=hparams, X=tokens, past=past, reuse=tf.AUTO_REUSE)
 
-            logits = lm_output['logits'][:, :, :hparams.n_vocab]
-            presents = lm_output['present']
-            hidden = lm_output['hidden']
-            presents.set_shape(past_shape(hparams=hparams, batch_size=batch_size))
-            return {
-                'logits': logits, # [batch, sequence, hparams.n_vocab]
-                'presents': presents,
-                'hidden': hidden
-            }
+        logits = lm_output['logits'][:, :, :hparams.n_vocab]
+        presents = lm_output['present']
+        hidden = lm_output['hidden']
+        presents.set_shape(past_shape(hparams=hparams, batch_size=batch_size))
+        return {'logits': logits,  # [batch, sequence, hparams.n_vocab]
+            'presents': presents, 'hidden': hidden}
 
     def decoder_t(self, initial_state, inputs, inputs_len, x0, past0, hidden0):
         """
@@ -366,6 +486,10 @@ class SeqUnit(object):
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
         covloss0 = 0.0
 
+        # gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
+        # gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
+
+
         def loop_fn(t, x_t, past, hidden, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
             """
             Decoding loop
@@ -385,18 +509,27 @@ class SeqUnit(object):
             """
 
 
-            with tf.device("/gpu:1"):
-                ### gpt generate
-                next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
-                # logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
-                # o_dist = tf.nn.softmax(logits) 
+            # with tf.device("/gpu:1"):
+            ### gpt generate
+            next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
+            logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
+            o_dist = tf.nn.softmax(logits) 
 
-                past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
-                hidden_nt = next_outputs['hidden'][:, -1, :]
+            # o_dist *= self.gpt_out_mask
 
-                ### try with tune
-                logits = self.dec_out(hidden_nt, finished)
-                o_dist = tf.nn.softmax(logits)
+            past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
+            hidden_nt = next_outputs['hidden'][:, -1, :]
+
+
+            # ### try with tune
+            # logits = self.dec_out(hidden_nt, finished)
+            # # logits = self.dec_out(hidden_nt_cond, finished)
+            # o_dist = tf.nn.softmax(logits)
+
+            # ### vocab mask
+            # o_dist = tf.multiply(o_dist, gpt_mask_layer)
+            # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
 
             ### concat field pos 
             batch_nums_time = tf.range(0, limit=batch_size)
@@ -406,7 +539,7 @@ class SeqUnit(object):
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
             att_x_in = tf.concat([att_x_in, this_field_pos_emb], axis=1)
 
-            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed)
+            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed, finished=finished)
 
 
             ### o_weight = batch * len, already normalized. p_gen = batch * 1
@@ -424,6 +557,8 @@ class SeqUnit(object):
 
             # final_dists = out_dist + attn_dists_projected
             final_dists = out_dist + (1 - p_gen) * attn_dists_projected
+            # ### if only gpt?
+            # final_dists = o_dist
 
             copy_mask = tf.gather_nd(self.copy_gate_mask, collect_ind)
 
@@ -432,7 +567,6 @@ class SeqUnit(object):
             ### for gate loss
             # emit_gate = emit_gate.write(t, tf.sigmoid(p_gen))
             emit_gate = emit_gate.write(t, tf.multiply(p_gen, copy_mask))
-
             emit_ta = emit_ta.write(t, final_dists)
 
 
@@ -457,7 +591,7 @@ class SeqUnit(object):
         outputs_gate = tf.squeeze(tf.transpose(emit_gate.stack(), [1,0,2]))
         return outputs, past_final, emit_covloss, outputs_gate
 
-    def decoder_g(self, initial_state, x0, past0, hidden0):
+    def decoder_g(self, x0, past0, hidden0):
         batch_size = tf.shape(self.encoder_input)[0]
         encoder_len = tf.shape(self.encoder_embed)[1]
 
@@ -476,32 +610,49 @@ class SeqUnit(object):
         ### coverage mechanisim
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
 
-        def loop_fn(t, x_t, past, hidden, field_pos_emb, emit_ta, att_ta, coverage_att_sum, finished):
+        att_mask = tf.ones([batch_size, encoder_len], dtype=tf.float32)
+
+        # gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
+        # gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
+
+        def loop_fn(t, x_t, past, hidden, field_pos_emb, emit_ta, att_ta, coverage_att_sum, att_mask, finished):
 
 
 
-            with tf.device("/gpu:1"):
-                ### gpt generate
-                next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
-                logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
-                o_dist = tf.nn.softmax(logits) 
+            # with tf.device("/gpu:1"):
+            ### gpt generate
+            next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
+            logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
+            o_dist = tf.nn.softmax(logits) 
+            # o_dist *= self.gpt_out_mask
 
-                past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
-                hidden_nt = next_outputs['hidden'][:, -1, :]
+            past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
+            hidden_nt = next_outputs['hidden'][:, -1, :]
 
-                ### try with tune
-                logits = self.dec_out(hidden_nt, finished)
-                o_dist = tf.nn.softmax(logits)
+
+            # ### try with tune
+            # logits = self.dec_out(hidden_nt, finished)
+            # # logits = self.dec_out(hidden_nt_cond, finished)
+            # o_dist = tf.nn.softmax(logits)
+
+            # ### vocab mask
+            # o_dist = tf.multiply(o_dist, gpt_mask_layer)
+            # o_dist = tf.divide(o_dist, (1e-6 + tf.reduce_sum(o_dist, 1, keepdims=True)))
+
 
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
             att_x_in = tf.concat([att_x_in, field_pos_emb], axis=1)
 
-            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed)
+            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed, finished=finished)
 
 
             ### o_weight = batch * len, already normalized. p_gen = batch * 1
             out_dist = p_gen * o_dist # batch * self.target_vocab
             att_dist = (1 - p_gen) * o_weight # batch * len
+
+            ### mask previous
+
+            att_dist *= att_mask
 
 
             batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
@@ -513,7 +664,8 @@ class SeqUnit(object):
 
             final_dists = out_dist + attn_dists_projected
 
-            # final_dists = out_dist
+            # # ### if only gpt?
+            # final_dists = o_dist
 
 
             ### coverage
@@ -554,14 +706,27 @@ class SeqUnit(object):
 
 
 
+            ### mask atten pos of previous
+            att_pos *= mask
+            att_pos_tile = tf.expand_dims(att_pos, 1)
+            att_pos_tile = tf.tile(att_pos_tile, [1, encoder_len])
+            att_mask_enc = tf.range(0, encoder_len)
+            att_mask_enc = tf.expand_dims(att_mask_enc, 0)
+            att_mask_enc = tf.tile(att_mask_enc, [batch_size, 1])
+            mask_enc = tf.cast(tf.not_equal(att_pos_tile, att_mask_enc), tf.float32)
+            att_mask *= mask_enc
+
+
+
+
             finished = tf.logical_or(finished, tf.equal(x_nt, self.stop_token))
             finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
-            return t+1, x_nt, past_nt, hidden_nt, field_pos_nt, emit_ta, att_ta, coverage_att_sum, finished
+            return t+1, x_nt, past_nt, hidden_nt, field_pos_nt, emit_ta, att_ta, coverage_att_sum, att_mask, finished
 
-        _, _, past_final, hidden_final, field_pos_nt, emit_ta, att_ta, _, _ = tf.while_loop(
-            cond=lambda _1, _2, _3, _4, _5, _6, _7, _8, finished: tf.logical_not(tf.reduce_all(finished)),
+        _, _, past_final, hidden_final, field_pos_nt, emit_ta, att_ta, _, _, _ = tf.while_loop(
+            cond=lambda _1, _2, _3, _4, _5, _6, _7, _8, _9, finished: tf.logical_not(tf.reduce_all(finished)),
             body=loop_fn,
-            loop_vars=(time, x0, past0, hidden0, field_pos0, emit_ta, att_ta, coverage_att_sum, f0))
+            loop_vars=(time, x0, past0, hidden0, field_pos0, emit_ta, att_ta, coverage_att_sum, att_mask, f0))
 
         outputs = tf.transpose(emit_ta.stack(), [1,0,2])
         pred_tokens = tf.argmax(outputs, 2)
@@ -569,28 +734,65 @@ class SeqUnit(object):
         return pred_tokens, atts
 
 
-    def __call__(self, x, sess):
+
+    def __call__(self, x, sess, mode):
 
 
-        ### normal training
-        loss,  _, copy_gate_loss, de_conv_loss = sess.run([self.mean_loss, self.train_op, self.copy_gate_loss, self.de_conv_loss],
-                                                       {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
-                                                        self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
-                                                        self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                                                        self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
-                                                        self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
-                                                        self.decoder_rpos_input: x['dec_rpos'], self.gpt_context: x['gpt_context']})
+        # ### normal training
+        # loss,  _, copy_gate_loss, de_conv_loss = sess.run([self.mean_loss, self.train_op, self.copy_gate_loss, self.de_conv_loss],
+        #                                                {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
+        #                                                 self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
+        #                                                 self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
+        #                                                 self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+        #                                                 self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+        #                                                 self.decoder_rpos_input: x['dec_rpos'], self.gpt_context: x['gpt_context'],
+        #                                                 self.context: x['context']})
 
 
-        return loss, copy_gate_loss, de_conv_loss
+        # return loss, copy_gate_loss, de_conv_loss
+
+        ### accumulate gradient
+        if mode == 0:
+            loss, copy_gate_loss, de_conv_loss, _, _, _, _ = sess.run([self.mean_loss, self.copy_gate_loss, self.de_conv_loss, self.accumulate_gradients, self.acc_loss, \
+                                                                    self.acc_cov_loss, self.acc_gate_loss],
+                                                           {self.encoder_input: x['enc_in'], self.encoder_len: x['enc_len'], 
+                                                            self.encoder_field: x['enc_fd'], self.encoder_pos: x['enc_pos'], 
+                                                            self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
+                                                            self.decoder_len: x['dec_len'], self.decoder_output: x['dec_out'],
+                                                            self.decoder_field_input: x['dec_field'], self.decoder_pos_input: x['dec_pos'],
+                                                            self.decoder_rpos_input: x['dec_rpos'], self.gpt_context: x['gpt_context'],
+                                                            self.context: x['context'], self.encoder_input_real: x['enc_in_real'], self.decoder_input_real: x['dec_in_real']})
+
+
+            return loss, copy_gate_loss, de_conv_loss, 0
+
+        ### update
+        if mode == 1:
+
+            acc_loss, acc_cov_loss, acc_gate_loss = sess.run([self._loss, self._cov_loss, self._gate_loss])
+            sess.run(self.update)
+            sess.run(self.reset)
+
+
+            return acc_loss, acc_gate_loss, acc_cov_loss
 
     def generate(self, x, sess):
         predictions, atts = sess.run([self.g_tokens, self.atts],
                                {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'], 
                                 self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
                                 self.encoder_rpos: x['enc_rpos'], self.decoder_input: x['dec_in'],
-                                self.gpt_context: x['gpt_context']})
+                                self.gpt_context: x['gpt_context'], self.context: x['context'], 
+                                self.encoder_input_real: x['enc_in_real'], self.decoder_input_real: x['dec_in_real']})
         return predictions, atts
+
+    # def generate_beam(self, x, sess):
+    #     # beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
+    #     beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all = sess.run(
+    #                      [self.beam_seqs,self.beam_probs, self.cand_seqs, self.cand_probs],
+    #                      {self.encoder_input: x['enc_in'], self.encoder_field: x['enc_fd'],
+    #                       self.encoder_len: x['enc_len'], self.encoder_pos: x['enc_pos'],
+    #                       self.encoder_rpos: x['enc_rpos']})
+    #     return beam_seqs_all, beam_probs_all, cand_seqs_all, cand_probs_all
 
     def save(self, path, sess):
 

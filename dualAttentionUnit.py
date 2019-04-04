@@ -22,6 +22,7 @@ class dualAttentionWrapper(object):
 
         with tf.variable_scope(scope_name):
             self.Wh = tf.get_variable('Wh', [input_size, hidden_size])
+            # self.Wh = tf.get_variable('Wh', [emb_size, hidden_size])
             self.bh = tf.get_variable('bh', [hidden_size])
             self.Ws = tf.get_variable('Ws', [input_size, hidden_size])
             self.bs = tf.get_variable('bs', [hidden_size])
@@ -39,6 +40,7 @@ class dualAttentionWrapper(object):
             ### add pointer params
             ### p_gen = sigmod(wh * ht + ws * st + wx * xt + bptr)
             self.wh_ptr = tf.get_variable('wh_ptr', [self.hidden_size, 1])
+            # self.wh_ptr = tf.get_variable('wh_ptr', [self.emb_size, 1])
             self.ws_ptr = tf.get_variable('ws_ptr', [self.hidden_size, 1])
             self.wx_ptr = tf.get_variable('wx_ptr', [self.emb_size, 1])
             self.b_ptr = tf.get_variable('b_ptr', [1])
@@ -63,12 +65,21 @@ class dualAttentionWrapper(object):
         hs = tf.transpose(hs, [1,0,2])  # input_len * batch * input_size
         fds = tf.transpose(fds, [1,0,2])
 
+        hidden_shape = [tf.shape(hs)[0], tf.shape(hs)[1], self.hidden_size]
+
         hs2d = tf.reshape(hs, [-1, self.input_size])
         phi_hs2d = tf.tanh(tf.nn.xw_plus_b(hs2d, self.Wh, self.bh))
         phi_hs = tf.reshape(phi_hs2d, tf.shape(hs))
         fds2d = tf.reshape(fds, [-1, self.field_size])
         phi_fds2d = tf.tanh(tf.nn.xw_plus_b(fds2d, self.Wf, self.bf))
         phi_fds = tf.reshape(phi_fds2d, tf.shape(hs))
+
+        # hs2d = tf.reshape(hs, [-1, self.emb_size])
+        # phi_hs2d = tf.tanh(tf.nn.xw_plus_b(hs2d, self.Wh, self.bh))
+        # phi_hs = tf.reshape(phi_hs2d, hidden_shape)
+        # fds2d = tf.reshape(fds, [-1, self.field_size])
+        # phi_fds2d = tf.tanh(tf.nn.xw_plus_b(fds2d, self.Wf, self.bf))
+        # phi_fds = tf.reshape(phi_fds2d, hidden_shape)
 
         ### add coverage: coverage_att_sum # batch * enc_len
         ### how to incorporate coverage penalty? for each or for all?
@@ -106,7 +117,7 @@ class dualAttentionWrapper(object):
 
         if finished is not None:
             # out = tf.where(finished, tf.zeros_like(out), out)
-            p_gen = tf.where(finished, tf.zeros_like(p_gen), p_gen)
+            p_gen = tf.where(finished, tf.ones_like(p_gen), p_gen)
             weights = tf.where(finished, tf.zeros_like(weights), weights)
 
         return weights, p_gen
