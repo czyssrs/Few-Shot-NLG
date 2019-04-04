@@ -67,7 +67,7 @@ model_dir = sys.argv[1]
 
 
 ###
-root_path = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/"
+root_path = sys.argv[2]
 gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
 gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
 
