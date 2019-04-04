@@ -218,11 +218,12 @@ class DataLoader(object):
 
 
                 if domain == "humans":
-                    gpt_context = " Biography :"
+                    gpt_context = " Biography : "
                 elif domain == "books":
-                    gpt_context = " book introduction"
-                elif domain == "humans_tune":
-                    gpt_context = " Biography :"
+                    gpt_context = " Book introduction : "
+                elif domain == "songs":
+                    gpt_context = " Song introduction : "
+
 
                 gpt_context, _ = enc.encode(gpt_context)
 

@@ -192,7 +192,9 @@ def test():
 	# test1 = [35626, 266, 13, 6314, 2162, 4082, 3128, 1058, 1511, 46593, 346, 24217, 2162, 29835, 1058, 45630, \
 	# 272, 2162, 9901, 1058, 410, 4066, 34508, 6403, 2162, 2214, 1058, 3230, 12446, 2162, 435, 2611, 26910, 1058, \
 	# 6403, 286, 686, 35983, 2162, 3172, 66, 21231, 1058, 277, 2162, 3172, 66, 4686, 1058, 279, 2127, 22515, 2162, 2708, 3670, 1058, 1931, 291, 6314, 2162]
-	test1 = [3672, 837, 2939, 837, 8305, 837, 13755, 837, 4082, 3128, 837, 4082, 1295, 837, 1918, 3128, 837, 1918, 1295, 837, 16731, 837, 3397, 837, 2708, 3670, 837]
+	# test1 = [3672, 837, 2939, 837, 8305, 837, 13755, 837, 4082, 3128, 837, 4082, 1295, 837, 1918, 3128, 837, 1918, 1295, 837, 16731, 837, 3397, 837, 2708, 3670, 837]
+	test1 = [7839, 1058, 4171, 2933, 837, 1772, 1058, 474, 11025, 308, 295, 78, 837, 2656, 3670 ,1058, 474 ,11025, 443, 7245, 84 ,837 ,33417, 1058, 479 ,15289,257 ,13 ,10212, 365 ,837 ,1499 ,\
+	1058 ,1216, 590 ,837, 3303, 1058, 48718, 837 ,9991 ,1058 ,38251, 67 ,1756 ,8701, 316, 837 ,9207, 3128, 1058,32471, 837, 3199 ,287 ,46932, 1058 ,22717 ,837, 5468 ,1058 ,34131, 837]
 	# test1 = [889, 1289]
 
 
@@ -408,15 +410,15 @@ if __name__=='__main__':
 	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans/original_data/test.summary"
 	# gen_bpe_data(box_in, summary_in, box_out, summary_out)
 
-	test()
+	# test()
 
-	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.box"
-	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data_original/test_full.summary"
+	box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/songs/original_data_original/test.box"
+	summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/songs/original_data_original/test.summary"
 
-	# box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data/test_full.box"
-	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/humans_original/original_data/test_full.summary"
+	box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/songs/original_data/test_full.box"
+	summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/songs/original_data/test_full.summary"
 
-	# convert_bpe(box_in, summary_in, box_out, summary_out)
+	convert_bpe(box_in, summary_in, box_out, summary_out)
 
 	# enc = encoder.get_encoder("117M")
 	# print(enc.encoder['<|endoftext|>'])

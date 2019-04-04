@@ -20,13 +20,13 @@ from util import *
 
 
 tf.app.flags.DEFINE_string("gpt_model_name",'117M','model name of gpt2')
-tf.app.flags.DEFINE_string("domain",'humans','domain name')
+tf.app.flags.DEFINE_string("domain",'songs','domain name')
 
 tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
 tf.app.flags.DEFINE_float("coverage_penalty", 0.02,'coverage loss penalty')
 
 tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
-tf.app.flags.DEFINE_float("copy_gate_penalty", 0.1, 'copy gate loss penalty')
+tf.app.flags.DEFINE_float("copy_gate_penalty", 0.01, 'copy gate loss penalty')
 
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("load",'0','load directory')

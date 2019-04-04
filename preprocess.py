@@ -479,8 +479,20 @@ def gen_context(domain):
 
 
                 if this_name == "name":
-                    to_write = this_value + " ,"
+
+                    ### for humans
+                    if domain == "humans":
+                        to_write = this_value + " ,"
                     # to_write = "name ,"
+
+                    # ### for books
+                    if domain == "books":
+                        to_write = "title : " + this_value + " ,"
+
+
+                    # ### for songs
+                    if domain == "songs":
+                        to_write = "song name : " + this_value + " ,"
 
                 else:
 
