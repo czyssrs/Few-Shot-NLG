@@ -108,9 +108,10 @@ class DataLoader(object):
             decoder_rpos = decoder_rpos[:self.limits]
             cont_in = cont_in[:self.limits]
 
-        print (path)
-        print (len(summaries))
-        print (summaries[0].strip().split(' '))
+        print(path)
+        print(len(summaries))
+        print(summaries[0].strip().split(' '))
+
         summaries = [list(map(int, summary.strip().split(' '))) for summary in summaries]
         texts = [list(map(int, text.strip().split(' '))) for text in texts]
         fields = [list(map(int, field.strip().split(' '))) for field in fields]

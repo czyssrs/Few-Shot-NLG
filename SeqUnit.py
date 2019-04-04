@@ -108,6 +108,7 @@ class SeqUnit(object):
         self.decoder_input_real = tf.placeholder(tf.int32, [None, None])
 
 
+        # ENCODER LSTM
         with tf.variable_scope(scope_name):
             if self.fgate_enc:
                 print ('field-gated encoder LSTM')
@@ -131,7 +132,6 @@ class SeqUnit(object):
         self.units.update({'encoder_lstm': self.enc_lstm})
 
         self.batch_size = tf.shape(self.decoder_input)[0]
-
 
 
         # gpt_emb_init_tune('model', self.gpt_hparams, tf.constant(self.select_ind))
@@ -171,8 +171,9 @@ class SeqUnit(object):
 
 
 
-    # with tf.device("/gpu:1"):
+#        with tf.device("/gpu:1"):
         with tf.variable_scope(scope_name):
+
 
             self.field_id2word = tf.constant(fieldid2word)
             self.gpt_out_mask = tf.constant(gpt_out_mask)
@@ -245,14 +246,14 @@ class SeqUnit(object):
         # ======================================== decoder ======================================== #
 
         if self.dual_att:
-            print ('dual attention mechanism used')
+            print('dual attention mechanism used')
             with tf.variable_scope(scope_name):
                 # self.att_layer = dualAttentionWrapper(self.emb_size, self.hidden_size, self.hidden_size, self.field_attention_size,
                 #                                         en_outputs, self.field_pos_embed, "attention")
                 self.att_layer = dualAttentionWrapper(self.dec_input_size, self.hidden_size, self.hidden_size, self.field_attention_size, "attention")
                 self.units.update({'attention': self.att_layer})
         else:
-            print ("normal attention used")
+            print("normal attention used")
             with tf.variable_scope(scope_name):
                 self.att_layer = AttentionWrapper(self.hidden_size, self.hidden_size, en_outputs, "attention")
                 self.units.update({'attention': self.att_layer})
@@ -433,19 +434,41 @@ class SeqUnit(object):
 
 
     def step_gpt(self, hparams, tokens, batch_size, past=None):
+        """
+        GPT2 model is imported here, as defined in model.py
+        Args:
+            hparams: Input parameters of the GPT architecture
+            tokens: input tokens
+            batch_size: batch size
+            past: #TODO
+
+        Returns: Output of transformer - logits in output sequence
+
+        """
+
         lm_output = model(hparams=hparams, X=tokens, past=past, reuse=tf.AUTO_REUSE)
 
         logits = lm_output['logits'][:, :, :hparams.n_vocab]
         presents = lm_output['present']
         hidden = lm_output['hidden']
         presents.set_shape(past_shape(hparams=hparams, batch_size=batch_size))
-        return {
-            'logits': logits, # [batch, sequence, hparams.n_vocab]
-            'presents': presents,
-            'hidden': hidden
-        }
+        return {'logits': logits,  # [batch, sequence, hparams.n_vocab]
+            'presents': presents, 'hidden': hidden}
 
-    def decoder_t(self, inputs, inputs_len, x0, past0, hidden0):
+    def decoder_t(self, initial_state, inputs, inputs_len, x0, past0, hidden0):
+        """
+        Decoder for training
+        Args:
+            initial_state: Initial state of decoder
+            inputs: ground truth inputs
+            inputs_len: length of ground truth input
+            x0: #TODO
+            past0: #TODO
+            hidden0: #TODO
+
+        Returns:
+
+        """
         ### gather p_gen and att_weights
         batch_size = tf.shape(self.decoder_input)[0]
         max_time = tf.shape(self.decoder_input)[1]
@@ -468,6 +491,22 @@ class SeqUnit(object):
 
 
         def loop_fn(t, x_t, past, hidden, emit_ta, emit_gate, coverage_att_sum, covloss, finished):
+            """
+            Decoding loop
+            Args:
+                t: sequence index
+                x_t: input at location t
+                past: decoded string so far
+                hidden: #TODO
+                emit_ta: TODO
+                emit_gate:  TODO
+                coverage_att_sum: TODO
+                covloss: TODO
+                finished: TODO
+
+            Returns:
+
+            """
 
 
             # with tf.device("/gpu:1"):

@@ -65,8 +65,9 @@ model_dir = sys.argv[1]
 # gold_path_test = 'processed_data/test/test_split_for_rouge/gold_summary_'
 # gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
 
+
 ###
-root_path = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/"
+root_path = sys.argv[2]
 gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
 gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
 
@@ -201,7 +202,7 @@ def train(sess, dataloader, model):
 
 
                 if (record_k > 1 and record_k % FLAGS.report == 0):
-                    print ("Round: ", record_k / FLAGS.report)
+                    print("Round: ", record_k / FLAGS.report)
                     cost_time = time.time() - start_time
                     write_log("%d : time = %.3f " % (record_k // FLAGS.report, cost_time))
                     start_time = time.time()
@@ -209,7 +210,6 @@ def train(sess, dataloader, model):
                         ksave_dir = save_model(model, sess, save_dir, record_k // FLAGS.report)
                         write_log(evaluate(sess, dataloader, model, ksave_dir, 'valid'))
                         # write_log(evaluate(sess, dataloader, model, ksave_dir, 'test'))
-                    
 
 
 def test(sess, dataloader, model):
@@ -281,7 +281,8 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     return result
 
 def write_log(s):
-    print (s)
+    print(s)
+
     with open(log_file, 'a') as f:
         f.write(s+'\n')
 
