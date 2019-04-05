@@ -3,40 +3,26 @@
 # @Time    : 17-4-27 下午8:43
 # @Author  : Tianyu Liu
 
-import tensorflow as tf
 import time
-import random
 import numpy as np
 import encoder
-
+import os
 
 enc = encoder.get_encoder("117M")
 
 
 class DataLoader(object):
     def __init__(self, data_dir, limits, eos, empty):
-
-        self.train_data_path = [data_dir + '/train/train.summary.id', data_dir + '/train/train.box.val.id',
-                                data_dir + '/train/train.box.lab.id', data_dir + '/train/train.box.pos',
-                                data_dir + '/train/train.box.rpos', data_dir + '/train/train_summary_field_id.txt',
-                                data_dir + '/train/train_summary_pos.txt', data_dir + '/train/train_summary_rpos.txt',
-                                data_dir + '/train/train.context']
-
-        self.test_data_path = [data_dir + '/test/test.summary.id', data_dir + '/test/test.box.val.id',
-                               data_dir + '/test/test.box.lab.id', data_dir + '/test/test.box.pos',
-                               data_dir + '/test/test.box.rpos', data_dir + '/test/test_summary_field_id.txt',
-                                data_dir + '/test/test_summary_pos.txt', data_dir + '/test/test_summary_rpos.txt',
-                                data_dir + '/test/test.context']
-
-        self.dev_data_path = [data_dir + '/valid/valid.summary.id', data_dir + '/valid/valid.box.val.id',
-                              data_dir + '/valid/valid.box.lab.id', data_dir + '/valid/valid.box.pos',
-                              data_dir + '/valid/valid.box.rpos', data_dir + '/valid/valid_summary_field_id.txt',
-                                data_dir + '/valid/valid_summary_pos.txt', data_dir + '/valid/valid_summary_rpos.txt',
-                                data_dir + '/valid/valid.context']
-
-
+        """
+        Main dataloader
+        Args:
+            data_dir: str, path to data directory
+            limits:
+            eos: str, eos character
+            empty:
+        """
+        self.data_dir = data_dir
         self.vocab_mask_path = data_dir + '/vocab_local.txt'
-
 
         self.limits = limits
         self.man_text_len = 150
@@ -46,20 +32,18 @@ class DataLoader(object):
         start_time = time.time()
 
         print('Reading datasets ...')
-        self.train_set = self.load_data(self.train_data_path)
-        self.test_set = self.load_data(self.test_data_path)
-        self.dev_set = self.load_data(self.dev_data_path)
-        print ('Reading datasets comsumes %.3f seconds' % (time.time() - start_time))
+        self.train_set = self.load_data('train')
+        self.test_set = self.load_data('test')
+        self.dev_set = self.load_data('valid')
+        print('Reading datasets comsumes %.3f seconds' % (time.time() - start_time))
 
-        ### load fieldid2word list len 3
+        # load fieldid2word list len 3
         self.fieldid2word = []
         with open(data_dir + "/field2word.txt") as f:
             for line in f:
-                fieldid = int(line.strip().split("\t")[0])
                 word_list = line.strip().split("\t")[1].split(" ")
                 wordid_list = [int(tmp) for tmp in word_list]
                 assert len(wordid_list) == 3
-
                 self.fieldid2word.append(wordid_list)
 
         self.fieldid2word = np.array(self.fieldid2word)
@@ -81,89 +65,90 @@ class DataLoader(object):
             self.target_vocab.append(self.empty)
 
         assert len(self.gpt_out_mask) == eos + 1
-        print (len(self.gpt_out_mask))
-        print (len(self.target_vocab))
+        print(len(self.gpt_out_mask))
+        print(len(self.target_vocab))
 
-
-    def load_data(self, path):
-        summary_path, text_path, field_path, pos_path, rpos_path, dec_field, dec_pos, dec_rpos, cont_path = path
-        summaries = open(summary_path, 'r').read().strip().split('\n')
-        texts = open(text_path, 'r').read().strip().split('\n')
-        fields = open(field_path, 'r').read().strip().split('\n')
-        poses = open(pos_path, 'r').read().strip().split('\n')
-        rposes = open(rpos_path, 'r').read().strip().split('\n')
-        decoder_field = open(dec_field).read().strip().split('\n')
-        decoder_pos = open(dec_pos).read().strip().split('\n')
-        decoder_rpos = open(dec_rpos).read().strip().split('\n')
-        cont_in = open(cont_path).read().strip().split('\n')
-
+    def load_file(self, file_path):
+        data = open(file_path).read().strip().split('\n')
         if self.limits > 0:
-            summaries = summaries[:self.limits]
-            texts = texts[:self.limits]
-            fields = fields[:self.limits]
-            poses = poses[:self.limits]
-            rposes = rposes[:self.limits]
-            decoder_field = decoder_field[:self.limits]
-            decoder_pos = decoder_pos[:self.limits]
-            decoder_rpos = decoder_rpos[:self.limits]
-            cont_in = cont_in[:self.limits]
+            data = data[:self.limits]
+        print(len(data))
+        print(data[0].strip().split(' '))
+        d = [list(map(int, d.strip().split(' '))) for d in data]
+        return d
 
-        print(path)
-        print(len(summaries))
-        print(summaries[0].strip().split(' '))
+    def load_data(self, split):
+        """
+        Load all data
+        Args:
+            split: str, one of 'train', 'test' or 'valid'
 
-        summaries = [list(map(int, summary.strip().split(' '))) for summary in summaries]
-        texts = [list(map(int, text.strip().split(' '))) for text in texts]
-        fields = [list(map(int, field.strip().split(' '))) for field in fields]
-        poses = [list(map(int, pos.strip().split(' '))) for pos in poses]
-        rposes = [list(map(int, rpos.strip().split(' '))) for rpos in rposes]
-        decoder_field = [list(map(int, field.strip().split(' '))) for field in decoder_field]
-        decoder_pos = [list(map(int, pos.strip().split(' '))) for pos in decoder_pos]
-        decoder_rpos = [list(map(int, rpos.strip().split(' '))) for rpos in decoder_rpos]
-        context_in = [list(map(int, cont.strip().split(' '))) for cont in cont_in]
+        Returns:
 
+        """
+        subdir = os.path.join(self.data_dir, split)
+        file_path_suffixes = {'summary': '.summary.id',
+                              'text': '.box.val.id',
+                              'field': '.box.lab.id',
+                              'pos': '.box.pos',
+                              'rpos': '.box.rpos',
+                              'dec': '_summary_field_id.txt',
+                              'dec_pos': '_summary_pos.txt',
+                              'dec_rpos': '_summary_rpos.txt',
+                              'cont_path': '.context'}
 
-        return summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos, context_in
+        all_data = {}
+        for fp in file_path_suffixes.keys():
+            file_path = os.path.join(subdir, split + file_path_suffixes[fp])
+            all_data[fp] = self.load_file(file_path)
+
+        return all_data
+
+    def shuffle_all_data(self, data):
+        data_size = len(data['summary'])
+        shuffle_indices = np.random.permutation(np.arange(data_size))
+        shuffled_data = {}
+        for fp in data.keys():
+            shuffled_data[fp] = np.array(data[fp])[shuffle_indices]
+        return shuffled_data
+
+    def get_zipped_batch(self, data, start_index, end_index):
+        return zip(data['summary'][start_index:end_index],
+                   data['text'][start_index:end_index],
+                   data['field'][start_index:end_index],
+                   data['pos'][start_index:end_index],
+                   data['rpos'][start_index:end_index],
+                   data['dec'][start_index:end_index],
+                   data['dec_pos'][start_index:end_index],
+                   data['dec_rpos'][start_index:end_index],
+                   data['cont_path'][start_index:end_index])
 
 
     def batch_iter(self, data, batch_size, shuffle, domain):
-        summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos, context_in = data
-        data_size = len(summaries)
+        #summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos, context_in = data
+        data_size = len(data['summary'])
         num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
             else int(data_size / batch_size) + 1
 
         if shuffle:
-            shuffle_indices = np.random.permutation(np.arange(data_size))
-            summaries = np.array(summaries)[shuffle_indices]
-            texts = np.array(texts)[shuffle_indices]
-            fields = np.array(fields)[shuffle_indices]
-            poses = np.array(poses)[shuffle_indices]
-            rposes = np.array(rposes)[shuffle_indices]
-
-            decoder_field = np.array(decoder_field)[shuffle_indices]
-            decoder_pos = np.array(decoder_pos)[shuffle_indices]
-            decoder_rpos = np.array(decoder_rpos)[shuffle_indices]
-
-            context_in = np.array(context_in)[shuffle_indices]
+            data = self.shuffle_all_data(data)
 
         for batch_num in range(num_batches):
             start_index = batch_num * batch_size
             end_index = min((batch_num + 1) * batch_size, data_size)
 
-            max_summary_len = max([len(sample) for sample in summaries[start_index:end_index]]) 
-            max_text_len = max([len(sample) for sample in texts[start_index:end_index]])
-            max_cont_len = max([len(sample) for sample in context_in[start_index:end_index]])
+            max_summary_len = max([len(sample) for sample in data['summary'][start_index:end_index]])
+            max_text_len = max([len(sample) for sample in data['text'][start_index:end_index]])
+            max_cont_len = max([len(sample) for sample in data['cont_path'][start_index:end_index]])
 
+            batch_data = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [],
+                          'dec_in': [], 'dec_len': [], 'dec_out': [], 'oov_map': [],
+                          'dec_field': [], 'dec_pos': [], 'dec_rpos': [], 'gpt_context': [],
+                          'context': [], 'enc_in_real': [], 'dec_in_real': []}
 
-            batch_data = {'enc_in':[], 'enc_fd':[], 'enc_pos':[], 'enc_rpos':[], 'enc_len':[],
-                          'dec_in':[], 'dec_len':[], 'dec_out':[], 'oov_map':[], 'dec_field':[],
-                          'dec_pos':[], 'dec_rpos':[], 'gpt_context':[], 'context':[], 'enc_in_real':[], 'dec_in_real':[]}
+            data_subset = self.get_zipped_batch(data, start_index, end_index)
 
-            for summary, text, field, pos, rpos, dec_field, dec_pos, dec_rpos, cont_text in zip(summaries[start_index:end_index], texts[start_index:end_index],
-                                            fields[start_index:end_index], poses[start_index:end_index],
-                                            rposes[start_index:end_index], 
-                                            decoder_field[start_index:end_index], decoder_pos[start_index:end_index],
-                                            decoder_rpos[start_index:end_index], context_in[start_index:end_index]):
+            for summary, text, field, pos, rpos, dec_field, dec_pos, dec_rpos, cont_text in data_subset:
                 summary_len = len(summary)
                 text_len = len(text)
                 cont_len = len(cont_text)
@@ -183,7 +168,6 @@ class DataLoader(object):
                 dec_pos = dec_pos + [0] * (max_summary_len - summary_len)
                 dec_rpos = dec_rpos + [0] * (max_summary_len - summary_len)
 
-
                 context = [self.empty] * (max_cont_len - cont_len) + cont_text
 
                 text = text + [self.empty] * (max_text_len - text_len)
@@ -191,7 +175,6 @@ class DataLoader(object):
                 pos = pos + [0] * (max_text_len - text_len)
                 rpos = rpos + [0] * (max_text_len - text_len)
 
-                
                 if max_text_len > self.man_text_len:
                     text = text[:self.man_text_len]
 
@@ -205,7 +188,7 @@ class DataLoader(object):
                 elif max_cont_len > self.man_text_len:
                     context = context[-self.man_text_len:]
 
-                ### OOM
+                # OOM
                 if max_summary_len > self.man_summary_len:
                     gold = gold[:self.man_summary_len + 1]
                     summary = summary[:self.man_summary_len]
@@ -217,14 +200,13 @@ class DataLoader(object):
                     dec_rpos = dec_rpos[:self.man_summary_len]
                     summary_len = min(summary_len, self.man_summary_len)
 
-
+                gpt_context = None
                 if domain == "humans":
                     gpt_context = " Biography : "
                 elif domain == "books":
                     gpt_context = " Book introduction : "
                 elif domain == "songs":
                     gpt_context = " Song introduction : "
-
 
                 gpt_context, _ = enc.encode(gpt_context)
 
@@ -234,7 +216,7 @@ class DataLoader(object):
                 #         print ("Error!")
                 
 
-                ### vocab mask
+                # vocab mask
                 text_real = []
                 for token in text:
                     if token in self.target_vocab:
@@ -248,8 +230,6 @@ class DataLoader(object):
                         dec_real.append(token)
                     else:
                         dec_real.append(self.empty)
-
-
 
                 batch_data['enc_in'].append(text)
                 batch_data['enc_len'].append(text_len)
@@ -268,9 +248,6 @@ class DataLoader(object):
                 batch_data['enc_in_real'].append(text_real)
                 batch_data['dec_in_real'].append(dec_real)
 
-
-            # print (batch_data['enc_in_real'][0])
-            # print (batch_data['dec_in_real'][0])
             yield batch_data
 
 
