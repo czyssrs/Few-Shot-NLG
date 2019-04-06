@@ -69,6 +69,14 @@ class DataLoader(object):
         print(len(self.target_vocab))
 
     def load_file(self, file_path):
+        """
+        Load file, limit to self.limits lines, convert to list of lists
+        Args:
+            file_path: str, file path
+
+        Returns:
+            List of lists of tokens
+        """
         data = open(file_path).read().strip().split('\n')
         if self.limits > 0:
             data = data[:self.limits]
@@ -84,7 +92,7 @@ class DataLoader(object):
             split: str, one of 'train', 'test' or 'valid'
 
         Returns:
-
+            Dict of data
         """
         subdir = os.path.join(self.data_dir, split)
         file_path_suffixes = {'summary': '.summary.id',
@@ -105,6 +113,14 @@ class DataLoader(object):
         return all_data
 
     def shuffle_all_data(self, data):
+        """
+        Shuffle all data
+        Args:
+            data: Dict of data
+
+        Returns:
+            Dict of shuffled data
+        """
         data_size = len(data['summary'])
         shuffle_indices = np.random.permutation(np.arange(data_size))
         shuffled_data = {}
@@ -113,6 +129,16 @@ class DataLoader(object):
         return shuffled_data
 
     def get_zipped_batch(self, data, start_index, end_index):
+        """
+        Get zipped batch of data given start and end index
+        Args:
+            data: Dict of data
+            start_index: int, start index
+            end_index: int, end index
+
+        Returns:
+            Iterable of batch data
+        """
         return zip(data['summary'][start_index:end_index],
                    data['text'][start_index:end_index],
                    data['field'][start_index:end_index],
@@ -123,9 +149,18 @@ class DataLoader(object):
                    data['dec_rpos'][start_index:end_index],
                    data['cont_path'][start_index:end_index])
 
-
     def batch_iter(self, data, batch_size, shuffle, domain):
-        #summaries, texts, fields, poses, rposes, decoder_field, decoder_pos, decoder_rpos, context_in = data
+        """
+        Create batch input for model
+        Args:
+            data: Dict, all data
+            batch_size: int, size of batch
+            shuffle: bool, whether or not to shuffle data
+            domain: str, domain name
+
+        Returns:
+            One batch of data
+        """
         data_size = len(data['summary'])
         num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
             else int(data_size / batch_size) + 1
@@ -157,7 +192,6 @@ class DataLoader(object):
                 assert text_len == len(field)
                 assert pos_len == len(field)
                 assert rpos_len == pos_len
-
                 assert len(dec_field) == len(summary)
 
                 gold = summary + [self.eos] * (max_summary_len - summary_len + 1)
@@ -210,12 +244,6 @@ class DataLoader(object):
 
                 gpt_context, _ = enc.encode(gpt_context)
 
-                # ### check:
-                # for token in gold:
-                #     if token not in self.target_vocab:
-                #         print ("Error!")
-                
-
                 # vocab mask
                 text_real = []
                 for token in text:
@@ -231,19 +259,19 @@ class DataLoader(object):
                     else:
                         dec_real.append(self.empty)
 
-                batch_data['enc_in'].append(text)
-                batch_data['enc_len'].append(text_len)
-                batch_data['enc_fd'].append(field)
-                batch_data['enc_pos'].append(pos)
-                batch_data['enc_rpos'].append(rpos)
-                batch_data['dec_in'].append(summary)
-                batch_data['dec_len'].append(summary_len)
-                batch_data['dec_out'].append(gold)
-                batch_data['dec_field'].append(dec_field)
-                batch_data['dec_pos'].append(dec_pos)
-                batch_data['dec_rpos'].append(dec_rpos)
-                batch_data['gpt_context'].append(gpt_context)
-                batch_data['context'].append(context)
+                batch_data['enc_in'].append(text) # value
+                batch_data['enc_len'].append(text_len) # value length
+                batch_data['enc_fd'].append(field) # field
+                batch_data['enc_pos'].append(pos) # field p+
+                batch_data['enc_rpos'].append(rpos) # field p-
+                batch_data['dec_in'].append(summary) # summary
+                batch_data['dec_len'].append(summary_len) # summary len
+                batch_data['dec_out'].append(gold) #padded summary
+                batch_data['dec_field'].append(dec_field) # masked summary
+                batch_data['dec_pos'].append(dec_pos) # summary pos
+                batch_data['dec_rpos'].append(dec_rpos) # summary rpos
+                batch_data['gpt_context'].append(gpt_context) # box for gpt input with domain name
+                batch_data['context'].append(context) #padded context
 
                 batch_data['enc_in_real'].append(text_real)
                 batch_data['dec_in_real'].append(dec_real)

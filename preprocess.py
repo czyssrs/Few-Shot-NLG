@@ -167,10 +167,11 @@ def fuzzy_match_rep(source, substring, field_name):
 
     return out_summary
 
-def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
+def gen_mask_field_pos(dem_file, in_summary, in_box, out_field, out_pos, out_rpos):
     """
     Mask out the values in the summary by the corresponding fields
     Args:
+        dem_file: demonymns file
         in_summary: str, summary file
         in_box: str, box file
         out_field: masked summary
@@ -182,7 +183,7 @@ def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos):
     """
 
     ### load nationality demonyms.csv
-    dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
+    dem_map = load_dem_map(dem_file)
 
     with open(in_box) as f:
         lines_box = f.readlines()
@@ -534,19 +535,23 @@ def reverse_pos(subdir):
                 bw.write(" ".join(item) + '\n')
 
 
-def check_generated_box(domain):
-    ftrain = [root_path + domain + "/processed_data/train/train.box.val",
-              root_path + domain + "/processed_data/train/train.box.lab",
-              root_path + domain + "/processed_data/train/train.box.pos",
-              root_path + domain + "/processed_data/train/train.box.rpos"]
-    ftest  = [root_path + domain + "/processed_data/test/test.box.val", 
-              root_path + domain + "/processed_data/test/test.box.lab",
-              root_path + domain + "/processed_data/test/test.box.pos",
-              root_path + domain + "/processed_data/test/test.box.rpos"]
-    fvalid = [root_path + domain + "/processed_data/valid/valid.box.val", 
-              root_path + domain + "/processed_data/valid/valid.box.lab", 
-              root_path + domain + "/processed_data/valid/valid.box.pos",
-              root_path + domain + "/processed_data/valid/valid.box.rpos"]
+def check_generated_box(subdir):
+    """
+    Check len of input data matches
+    Args:
+        subdir: str, root path
+
+    Returns:
+        None
+    """
+    ftrain = []
+    ftest = []
+    fvalid = []
+    for fp in [".box.val", ".box.lab", ".box.pos", ".box.rpos"]:
+        ftrain.append(os.path.join(subdir, 'processed_data', "train", "train" + fp))
+        ftest.append(os.path.join(subdir, 'processed_data', "test", "test" + fp))
+        fvalid.append(os.path.join(subdir, 'processed_data', "valid", "valid" + fp))
+
     for case in [ftrain, ftest, fvalid]:
         vals = open(case[0], 'r').read().strip().split('\n')
         labs = open(case[1], 'r').read().strip().split('\n')
@@ -597,7 +602,7 @@ def split_summary_for_rouge(subdir):
         fread.close()
 
 
-def table2id(subdir, merge_field_vocab):
+def table2id(subdir, merge_field_vocab, dem_file):
     """
         Main pre-processing script that creates masked summaries, writes out tokenized field, value,
         summary and masked summary
@@ -622,7 +627,7 @@ def table2id(subdir, merge_field_vocab):
     for split in ["train", "test", "valid"]:
         fvals.append(os.path.join(subdir, 'processed_data', split, split + '.box.val'))
         flabs.append(os.path.join(subdir, 'processed_data', split, split + '.box.lab'))
-        fsums.append(os.path.join(subdir, 'original_data', split, '.summary'))
+        fsums.append(os.path.join(subdir, 'original_data', split + '.summary'))
 
         fvals2id.append(os.path.join(subdir, 'processed_data', split, split + '.box.val.id'))
         flabs2id.append(os.path.join(subdir, 'processed_data', split, split + '.box.lab.id'))
@@ -691,7 +696,7 @@ def table2id(subdir, merge_field_vocab):
 
     # gen field masked summary
     for k, (fs, fb) in enumerate(zip(fsums, boxes)):
-        gen_mask_field_pos(fs, fb, f_decoder_field[k], f_decoder_pos[k], f_decoder_rpos[k])
+        gen_mask_field_pos(dem_file, fs, fb, f_decoder_field[k], f_decoder_pos[k], f_decoder_rpos[k])
 
     # write out masked summary tokens
     for k, ff in enumerate(f_decoder_field):
@@ -811,7 +816,7 @@ def get_train_vocab_bpe(subdir):
         f.write(" ".join(res_mask))
 
 
-def preprocess(subdir, merge_field_vocab):
+def preprocess(subdir, merge_field_vocab, dem_file):
     """
     We use a triple <f, p+, p-> to represent the field information of a token in the specific field. 
     p+&p- are the position of the token in that field counted from the begining and the end of the field.
@@ -836,7 +841,7 @@ def preprocess(subdir, merge_field_vocab):
 
     print("turning words and field types to ids ...")
     time_start = time.time()
-    table2id(subdir, merge_field_vocab)
+    table2id(subdir, merge_field_vocab, dem_file)
     duration = time.time() - time_start
     print("idlization finished in %.3f seconds" % float(duration))
 
@@ -868,8 +873,9 @@ if __name__ == '__main__':
     root_path = sys.argv[1]
     domain = sys.argv[2]
     subdir = os.path.join(root_path, domain)
+    dem_file = os.path.join(root_path, "demonyms.csv")
     merge_field_vocab = os.path.join(root_path, "human_books_songs_films_field_vocab.txt")
     make_dirs(subdir)
-    preprocess(subdir, merge_field_vocab)
+    preprocess(subdir, merge_field_vocab, dem_file)
     check_generated_box(subdir)
     print("check done")
