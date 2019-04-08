@@ -631,7 +631,7 @@ def table2id(subdir, merge_field_vocab, dem_file):
 
         fvals2id.append(os.path.join(subdir, 'processed_data', split, split + '.box.val.id'))
         flabs2id.append(os.path.join(subdir, 'processed_data', split, split + '.box.lab.id'))
-        fsums2id.append(os.path.join(subdir, 'processed_data', split, split + '.box.summary.id'))
+        fsums2id.append(os.path.join(subdir, 'processed_data', split, split + '.summary.id'))
 
         f_local_vocab.append(os.path.join(subdir, 'processed_data', split, split + '_local_oov.txt'))
         f_decoder_field.append(os.path.join(subdir, 'processed_data', split, split + '_summary_field.txt'))

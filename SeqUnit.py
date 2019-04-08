@@ -455,11 +455,10 @@ class SeqUnit(object):
         return {'logits': logits,  # [batch, sequence, hparams.n_vocab]
             'presents': presents, 'hidden': hidden}
 
-    def decoder_t(self, initial_state, inputs, inputs_len, x0, past0, hidden0):
+    def decoder_t(self, inputs, inputs_len, x0, past0, hidden0):
         """
         Decoder for training
         Args:
-            initial_state: Initial state of decoder
             inputs: ground truth inputs
             inputs_len: length of ground truth input
             x0: #TODO

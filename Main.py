@@ -20,7 +20,7 @@ from util import *
 
 
 tf.app.flags.DEFINE_string("gpt_model_name",'117M','model name of gpt2')
-tf.app.flags.DEFINE_string("domain",'songs','domain name')
+tf.app.flags.DEFINE_string("domain",'humans','domain name')
 
 tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
 tf.app.flags.DEFINE_float("coverage_penalty", 0.02,'coverage loss penalty')
@@ -61,21 +61,14 @@ last_best = 0.0
 
 model_dir = sys.argv[1]
 
-### path for calculate ROUGE
-# gold_path_test = 'processed_data/test/test_split_for_rouge/gold_summary_'
-# gold_path_valid = 'processed_data/valid/valid_split_for_rouge/gold_summary_'
-
-
 ###
 root_path = sys.argv[2]
-gold_path_valid = root_path + FLAGS.domain + '/original_data/valid.summary'
-gold_path_test = root_path + FLAGS.domain + '/original_data/test.summary'
+gold_path_valid = os.path.join(root_path, FLAGS.domain, 'original_data', 'valid.summary')
+gold_path_test = os.path.join(root_path, FLAGS.domain, 'original_data', 'test.summary')
 
-field_vocab_file = root_path + "human_books_songs_films_field_vocab.txt"
-# vocab_file = root_path + "human_books_songs_films_word_vocab_2000.txt"
+field_vocab_file = os.path.join(root_path, "human_books_songs_films_field_vocab.txt")
 
-# word2vec_file = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
-processed_data_dir = root_path + FLAGS.domain + "/processed_data"
+processed_data_dir = os.path.join(root_path, FLAGS.domain, "processed_data")
 
 ### bpe vocab
 enc = encoder.get_encoder("117M")
@@ -89,9 +82,9 @@ empty = 28920
 # test phase
 #### need to change!!!
 if FLAGS.mode == "test":
-    save_dir = root_path + FLAGS.domain +'/results/res/' + model_dir + '/loads/' + FLAGS.load + '/'
-    save_file_dir = root_path + FLAGS.domain +'/results/res/' + model_dir + '/' + 'files/'
-    pred_dir = root_path + FLAGS.domain +'/results/evaluation/' + model_dir + '/' + FLAGS.load + '/'
+    save_dir = os.path.join(root_path, FLAGS.domain, 'results', 'res', model_dir, 'loads', FLAGS.load)
+    save_file_dir = os.path.join(root_path, FLAGS.domain, 'results', 'res', model_dir, 'files')
+    pred_dir = os.path.join(root_path, FLAGS.domain, 'results', 'evaluation', model_dir, FLAGS.load)
     if not os.path.exists(pred_dir):
         os.mkdir(pred_dir)
     if not os.path.exists(save_file_dir):
@@ -100,15 +93,15 @@ if FLAGS.mode == "test":
     pred_beam_path = pred_dir + 'beam_summary_'
 # train phase
 else:
-    os.mkdir(root_path + FLAGS.domain +'/results/res/' + model_dir)
-    os.mkdir(root_path + FLAGS.domain +'/results/evaluation/' + model_dir)
+    os.makedirs(root_path + FLAGS.domain +'/results/res/' + model_dir)
+    os.makedirs(root_path + FLAGS.domain +'/results/evaluation/' + model_dir)
     save_dir = root_path + FLAGS.domain +'/results/res/' + model_dir + '/'
     save_file_dir = save_dir + 'files/'
     pred_dir = root_path + FLAGS.domain +'/results/evaluation/' + model_dir + '/'
     if not os.path.exists(pred_dir):
-        os.mkdir(pred_dir)
+        os.makedirs(pred_dir)
     if not os.path.exists(save_file_dir):
-        os.mkdir(save_file_dir)
+        os.makedirs(save_file_dir)
     pred_path = pred_dir + 'pred_summary_'
     pred_beam_path = pred_dir + 'beam_summary_'
 
