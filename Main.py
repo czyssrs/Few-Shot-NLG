@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
+"""
+Main script for running few shot training
+Eg.
+python ./Main.py --root_path ~/Data/NLP/few_shot_nlg/ --domain humans --gpt_model_name ../models/117M/ --output_path ~/Output/
+"""
 from SeqUnit import *
 from DataLoader import DataLoader, Preprocessor
 import model as model_gpt
@@ -12,45 +16,47 @@ from datetime import datetime
 import time
 
 
+# paths and mode
 tf.app.flags.DEFINE_string("root_path", "data/", "full path of data folder")
 tf.app.flags.DEFINE_string("domain",'humans','domain name')
 tf.app.flags.DEFINE_string("gpt_model_name",'117M','full path of gpt2 model')
 tf.app.flags.DEFINE_string("output_path", "new_model", "full path of saved output")
-
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("saved_model_path",'temp','saved model path for use in test mode')
 
+# architecture choices
 tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
 tf.app.flags.DEFINE_float("coverage_penalty", 0.02,'coverage loss penalty')
-
 tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
 tf.app.flags.DEFINE_float("copy_gate_penalty", 0.01, 'copy gate loss penalty')
-
-
-tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
-
 tf.app.flags.DEFINE_boolean("dual_attention", True,'dual attention layer or normal attention')
 tf.app.flags.DEFINE_boolean("fgate_encoder", True,'add field gate in encoder lstm')
 
+# data options
+tf.app.flags.DEFINE_integer("limits", 0,'max data set size')
 tf.app.flags.DEFINE_boolean("field", False,'concat field information to word embedding')
 tf.app.flags.DEFINE_boolean("position", False,'concat position information to word embedding')
 tf.app.flags.DEFINE_boolean("encoder_pos", True,'position information in field-gated encoder')
 tf.app.flags.DEFINE_boolean("decoder_pos", True,'position information in dual attention decoder')
-
-tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
-tf.app.flags.DEFINE_integer("emb_size", 768, "Size of embedding.")
-tf.app.flags.DEFINE_integer("field_size", 768, "Size of embedding.")
-tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
-tf.app.flags.DEFINE_integer("batch_size", 2, "Batch size of train set.")
-tf.app.flags.DEFINE_integer("batch_update", 22, "apply gradients after steps")
-tf.app.flags.DEFINE_integer("epoch", 5000, "Number of training epoch.")
 tf.app.flags.DEFINE_integer("source_vocab", 50257,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2756,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 50257,'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 10,'report valid results after some steps')
+
+# model hyperparams
+tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
+tf.app.flags.DEFINE_integer("emb_size", 768, "Size of embedding.")
+tf.app.flags.DEFINE_integer("field_size", 768, "Size of embedding.")
+tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
+
+# training
+tf.app.flags.DEFINE_integer("batch_size", 2, "Batch size of train set.")
+tf.app.flags.DEFINE_integer("batch_update", 22, "apply gradients after steps")
+tf.app.flags.DEFINE_integer("epoch", 5000, "Number of training epoch.")
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
+# logging
+tf.app.flags.DEFINE_integer("report", 10,'report valid results after some steps')
 tf.app.flags.DEFINE_integer("report_loss", 10,'report loss results after some steps')
 
 FLAGS = tf.app.flags.FLAGS
@@ -134,11 +140,11 @@ def train(sess, preprocessed_data, model):
                     start_time = time.time()
                     if record_k // FLAGS.report >= 1:
                         # save model
-                        saved_model_path_cnt = os.path.join(saved_model_path, 'loads', record_k // FLAGS.report)
+                        saved_model_path_cnt = os.path.join(saved_model_path, 'loads', str(record_k // FLAGS.report))
                         os.makedirs(saved_model_path_cnt, exist_ok=True)
                         model.save(saved_model_path_cnt, sess)
 
-                        results_path_cnt = os.path.join(results_path, 'loads', record_k // FLAGS.report)
+                        results_path_cnt = os.path.join(results_path, 'loads', str(record_k // FLAGS.report))
                         os.makedirs(results_path_cnt, exist_ok=True)
                         validation_result = evaluate(sess, preprocessed_data, model, results_path_cnt, 'valid')
                         write_log(log_file, validation_result)
