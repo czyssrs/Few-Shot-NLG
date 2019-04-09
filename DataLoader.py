@@ -11,7 +11,7 @@ import os
 enc = encoder.get_encoder("117M")
 
 
-class DataLoader(object):
+class Preprocessor:
     def __init__(self, data_dir, limits, eos, empty):
         """
         Main dataloader
@@ -112,21 +112,57 @@ class DataLoader(object):
 
         return all_data
 
-    def shuffle_all_data(self, data):
+
+class DataLoader:
+    def __init__(self, data, target_vocab, domain, batch_size=64, shuffle=True, man_text_len=150,
+                 man_summary_len=85, eos=50256, empty=28920):
+        """
+        Main dataloader
+        Args:
+            data_dir: dict, all the data
+            batch_size: int, batch size
+            shuffle: bool, Whether to shuffle data
+            domain: str, domain name
+        """
+        self.data = data
+        self.target_vocab = target_vocab
+        self.domain = domain
+        self.batch_size = batch_size
+        self.man_text_len = man_text_len
+        self.man_summary_len = man_summary_len
+        self.eos = eos
+        self.empty = empty
+        self.data_size = len(data['summary'])
+        self.num_batches = int(self.data_size / batch_size) if self.data_size % batch_size == 0 \
+            else int(self.data_size / batch_size) + 1
+        if shuffle:
+            self.shuffle_all_data()
+        self.count = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return self.get_batch()
+
+    def __len__(self):
+        return self.data_size
+
+    def reset(self):
+        self.count = 0
+        self.shuffle_all_data()
+
+    def shuffle_all_data(self):
         """
         Shuffle all data
-        Args:
-            data: Dict of data
-
         Returns:
-            Dict of shuffled data
+            None
         """
-        data_size = len(data['summary'])
+        data_size = len(self.data['summary'])
         shuffle_indices = np.random.permutation(np.arange(data_size))
-        shuffled_data = {}
-        for fp in data.keys():
-            shuffled_data[fp] = np.array(data[fp])[shuffle_indices]
-        return shuffled_data
+        for fp in self.data.keys():
+            self.data[fp] = np.array(self.data[fp])[shuffle_indices]
+        return
 
     def get_zipped_batch(self, data, start_index, end_index):
         """
@@ -149,133 +185,114 @@ class DataLoader(object):
                    data['dec_rpos'][start_index:end_index],
                    data['cont_path'][start_index:end_index])
 
-    def batch_iter(self, data, batch_size, shuffle, domain):
-        """
-        Create batch input for model
-        Args:
-            data: Dict, all data
-            batch_size: int, size of batch
-            shuffle: bool, whether or not to shuffle data
-            domain: str, domain name
+    def get_batch(self):
+        start_index = self.count * self.batch_size
+        end_index = min((self.count + 1) * self.batch_size, self.data_size)
 
-        Returns:
-            One batch of data
-        """
-        data_size = len(data['summary'])
-        num_batches = int(data_size / batch_size) if data_size % batch_size == 0 \
-            else int(data_size / batch_size) + 1
+        max_summary_len = max([len(sample) for sample in self.data['summary'][start_index:end_index]])
+        max_text_len = max([len(sample) for sample in self.data['text'][start_index:end_index]])
+        max_cont_len = max([len(sample) for sample in self.data['cont_path'][start_index:end_index]])
 
-        if shuffle:
-            data = self.shuffle_all_data(data)
+        batch_data = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [],
+                      'dec_in': [], 'dec_len': [], 'dec_out': [], 'oov_map': [], 'dec_field': [],
+                      'dec_pos': [], 'dec_rpos': [], 'gpt_context': [], 'context': [],
+                      'enc_in_real': [], 'dec_in_real': []}
 
-        for batch_num in range(num_batches):
-            start_index = batch_num * batch_size
-            end_index = min((batch_num + 1) * batch_size, data_size)
+        data_subset = self.get_zipped_batch(self.data, start_index, end_index)
 
-            max_summary_len = max([len(sample) for sample in data['summary'][start_index:end_index]])
-            max_text_len = max([len(sample) for sample in data['text'][start_index:end_index]])
-            max_cont_len = max([len(sample) for sample in data['cont_path'][start_index:end_index]])
+        for summary, text, field, pos, rpos, dec_field, dec_pos, dec_rpos, cont_text in data_subset:
+            summary_len = len(summary)
+            text_len = len(text)
+            cont_len = len(cont_text)
+            pos_len = len(pos)
+            rpos_len = len(rpos)
+            assert text_len == len(field)
+            assert pos_len == len(field)
+            assert rpos_len == pos_len
+            assert len(dec_field) == len(summary)
 
-            batch_data = {'enc_in': [], 'enc_fd': [], 'enc_pos': [], 'enc_rpos': [], 'enc_len': [],
-                          'dec_in': [], 'dec_len': [], 'dec_out': [], 'oov_map': [],
-                          'dec_field': [], 'dec_pos': [], 'dec_rpos': [], 'gpt_context': [],
-                          'context': [], 'enc_in_real': [], 'dec_in_real': []}
+            gold = summary + [self.eos] * (max_summary_len - summary_len + 1)
+            # context = [self.eos] * (max_summary_len - summary_len) + summary
+            summary = summary + [self.eos] * (max_summary_len - summary_len)
 
-            data_subset = self.get_zipped_batch(data, start_index, end_index)
+            dec_field = dec_field + [self.empty] * (max_summary_len - summary_len)
+            dec_pos = dec_pos + [0] * (max_summary_len - summary_len)
+            dec_rpos = dec_rpos + [0] * (max_summary_len - summary_len)
 
-            for summary, text, field, pos, rpos, dec_field, dec_pos, dec_rpos, cont_text in data_subset:
-                summary_len = len(summary)
-                text_len = len(text)
-                cont_len = len(cont_text)
-                pos_len = len(pos)
-                rpos_len = len(rpos)
-                assert text_len == len(field)
-                assert pos_len == len(field)
-                assert rpos_len == pos_len
-                assert len(dec_field) == len(summary)
+            context = [self.empty] * (max_cont_len - cont_len) + cont_text
 
-                gold = summary + [self.eos] * (max_summary_len - summary_len + 1)
-                # context = [self.eos] * (max_summary_len - summary_len) + summary
-                summary = summary + [self.eos] * (max_summary_len - summary_len)
+            text = text + [self.empty] * (max_text_len - text_len)
+            field = field + [self.empty] * (max_text_len - text_len)
+            pos = pos + [0] * (max_text_len - text_len)
+            rpos = rpos + [0] * (max_text_len - text_len)
 
-                dec_field = dec_field + [self.empty] * (max_summary_len - summary_len)
-                dec_pos = dec_pos + [0] * (max_summary_len - summary_len)
-                dec_rpos = dec_rpos + [0] * (max_summary_len - summary_len)
+            if max_text_len > self.man_text_len:
+                text = text[:self.man_text_len]
 
-                context = [self.empty] * (max_cont_len - cont_len) + cont_text
+                context = context[-self.man_text_len:]
 
-                text = text + [self.empty] * (max_text_len - text_len)
-                field = field + [self.empty] * (max_text_len - text_len)
-                pos = pos + [0] * (max_text_len - text_len)
-                rpos = rpos + [0] * (max_text_len - text_len)
+                field = field[:self.man_text_len]
+                pos = pos[:self.man_text_len]
+                rpos = rpos[:self.man_text_len]
+                text_len = min(text_len, self.man_text_len)
 
-                if max_text_len > self.man_text_len:
-                    text = text[:self.man_text_len]
+            elif max_cont_len > self.man_text_len:
+                context = context[-self.man_text_len:]
 
-                    context = context[-self.man_text_len:]
+            # OOM
+            if max_summary_len > self.man_summary_len:
+                gold = gold[:self.man_summary_len + 1]
+                summary = summary[:self.man_summary_len]
 
-                    field = field[:self.man_text_len]
-                    pos = pos[:self.man_text_len]
-                    rpos = rpos[:self.man_text_len]
-                    text_len = min(text_len, self.man_text_len)
+                # context = context[-self.man_summary_len:]
 
-                elif max_cont_len > self.man_text_len:
-                    context = context[-self.man_text_len:]
+                dec_field = dec_field[:self.man_summary_len]
+                dec_pos = dec_pos[:self.man_summary_len]
+                dec_rpos = dec_rpos[:self.man_summary_len]
+                summary_len = min(summary_len, self.man_summary_len)
 
-                # OOM
-                if max_summary_len > self.man_summary_len:
-                    gold = gold[:self.man_summary_len + 1]
-                    summary = summary[:self.man_summary_len]
+            gpt_context = None
+            if self.domain == "humans":
+                gpt_context = " Biography : "
+            elif self.domain == "books":
+                gpt_context = " Book introduction : "
+            elif self.domain == "songs":
+                gpt_context = " Song introduction : "
 
-                    # context = context[-self.man_summary_len:]
+            gpt_context, _ = enc.encode(gpt_context)
 
-                    dec_field = dec_field[:self.man_summary_len]
-                    dec_pos = dec_pos[:self.man_summary_len]
-                    dec_rpos = dec_rpos[:self.man_summary_len]
-                    summary_len = min(summary_len, self.man_summary_len)
+            # vocab mask
+            text_real = []
+            for token in text:
+                if token in self.target_vocab:
+                    text_real.append(token)
+                else:
+                    text_real.append(self.empty)
 
-                gpt_context = None
-                if domain == "humans":
-                    gpt_context = " Biography : "
-                elif domain == "books":
-                    gpt_context = " Book introduction : "
-                elif domain == "songs":
-                    gpt_context = " Song introduction : "
+            dec_real = []
+            for token in summary:
+                if token in self.target_vocab:
+                    dec_real.append(token)
+                else:
+                    dec_real.append(self.empty)
 
-                gpt_context, _ = enc.encode(gpt_context)
+            batch_data['enc_in'].append(text)  # value
+            batch_data['enc_len'].append(text_len)  # value length
+            batch_data['enc_fd'].append(field)  # field
+            batch_data['enc_pos'].append(pos)  # field p+
+            batch_data['enc_rpos'].append(rpos)  # field p-
+            batch_data['dec_in'].append(summary)  # summary
+            batch_data['dec_len'].append(summary_len)  # summary len
+            batch_data['dec_out'].append(gold)  # padded summary
+            batch_data['dec_field'].append(dec_field)  # masked summary
+            batch_data['dec_pos'].append(dec_pos)  # summary pos
+            batch_data['dec_rpos'].append(dec_rpos)  # summary rpos
+            batch_data['gpt_context'].append(gpt_context)  # box for gpt input with domain name
+            batch_data['context'].append(context)  # padded context
 
-                # vocab mask
-                text_real = []
-                for token in text:
-                    if token in self.target_vocab:
-                        text_real.append(token)
-                    else:
-                        text_real.append(self.empty)
+            batch_data['enc_in_real'].append(text_real)
+            batch_data['dec_in_real'].append(dec_real)
 
-                dec_real = []
-                for token in summary:
-                    if token in self.target_vocab:
-                        dec_real.append(token)
-                    else:
-                        dec_real.append(self.empty)
-
-                batch_data['enc_in'].append(text) # value
-                batch_data['enc_len'].append(text_len) # value length
-                batch_data['enc_fd'].append(field) # field
-                batch_data['enc_pos'].append(pos) # field p+
-                batch_data['enc_rpos'].append(rpos) # field p-
-                batch_data['dec_in'].append(summary) # summary
-                batch_data['dec_len'].append(summary_len) # summary len
-                batch_data['dec_out'].append(gold) #padded summary
-                batch_data['dec_field'].append(dec_field) # masked summary
-                batch_data['dec_pos'].append(dec_pos) # summary pos
-                batch_data['dec_rpos'].append(dec_rpos) # summary rpos
-                batch_data['gpt_context'].append(gpt_context) # box for gpt input with domain name
-                batch_data['context'].append(context) #padded context
-
-                batch_data['enc_in_real'].append(text_real)
-                batch_data['dec_in_real'].append(dec_real)
-
-            yield batch_data
+        return batch_data
 
 

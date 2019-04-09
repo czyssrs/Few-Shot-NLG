@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 
 from SeqUnit import *
-from DataLoader import DataLoader
+from DataLoader import DataLoader, Preprocessor
 import model as model_gpt
 from tqdm import tqdm
 import encoder
 import json
-from util import get_current_git_version, bleu_score, write_log, save_model
+from util import get_current_git_version, bleu_score, write_log
 from datetime import datetime
 import time
 
@@ -38,7 +38,7 @@ tf.app.flags.DEFINE_boolean("encoder_pos", True,'position information in field-g
 tf.app.flags.DEFINE_boolean("decoder_pos", True,'position information in dual attention decoder')
 
 tf.app.flags.DEFINE_integer("hidden_size", 500, "Size of each layer.")
-tf.app.flags.DEFINE_integer("emb_size", 768, "Size of embedding.") 
+tf.app.flags.DEFINE_integer("emb_size", 768, "Size of embedding.")
 tf.app.flags.DEFINE_integer("field_size", 768, "Size of embedding.")
 tf.app.flags.DEFINE_integer("pos_size", 5, "Size of embedding.")
 tf.app.flags.DEFINE_integer("batch_size", 2, "Batch size of train set.")
@@ -60,7 +60,7 @@ if FLAGS.mode == "train":
     model_dir_name = datetime.now().strftime("%Y%m%d%H%M%S")
     model_dir = os.path.join(FLAGS.output_path, model_dir_name)
     results_path = os.path.join(model_dir, FLAGS.domain, "results")
-    saved_model_path = os.path.join(model_dir, "saved_model")
+    saved_model_path = os.path.join(model_dir, FLAGS.domain, "saved_model")
 else:
     saved_model_path = tf.app.flags.FLAGS.saved_model_path
     model_dir_name = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -86,15 +86,17 @@ eos = 50256 #TODO move to settings
 empty = 28920 #TODO move to settings
 
 
-def train(sess, dataloader, model):
+def train(sess, preprocessed_data, model):
     # keep track of all input parameters
-    write_log(log_file, "#######################################################")
+    write_log(log_file, "####################INPUT PARAMETERS###################")
     for attr in FLAGS.flag_values_dict():
         value = FLAGS.flag_values_dict()[attr]
         write_log(log_file, attr + " = " + str(value))
     write_log(log_file, "#######################################################")
 
-    trainset = dataloader.train_set
+    trainset = preprocessed_data.train_set
+    train_iterator = DataLoader(trainset, preprocessed_data.target_vocab, FLAGS.domain,
+                                batch_size=FLAGS.batch_size, shuffle=True, eos=eos, empty=empty)
 
     k = 0
     record_k = 0
@@ -105,11 +107,12 @@ def train(sess, dataloader, model):
     record_cov_loss = 0.0
 
     for _ in range(FLAGS.epoch):
-        for x in dataloader.batch_iter(trainset, FLAGS.batch_size, True, domain=FLAGS.domain):
+        for x in tqdm(train_iterator):
             model(x, sess, 0)
 
             k += 1
             if k % FLAGS.batch_update == 0:
+                print("updating accumulated gradient and reset")
                 this_loss, this_copy_gate_loss, this_cov_loss = model(x, sess, 1)
                 record_loss += this_loss
                 record_copy_loss += this_copy_gate_loss
@@ -135,7 +138,7 @@ def train(sess, dataloader, model):
                         # save model
                         saved_model_path_cnt = os.path.join(saved_model_path, 'loads', record_k // FLAGS.report)
                         os.makedirs(saved_model_path_cnt, exist_ok=True)
-                        save_model(model, sess, saved_model_path_cnt)
+                        model.save(saved_model_path_cnt, sess)
 
                         results_path_cnt = os.path.join(results_path, 'loads', record_k // FLAGS.report)
                         os.makedirs(results_path_cnt, exist_ok=True)
@@ -200,7 +203,7 @@ def main():
 
     # keep track of the commit id
     git_commit_id = get_current_git_version()
-    write_log(log_file, git_commit_id)
+    write_log(log_file, "GIT COMMIT ID: " + git_commit_id)
 
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
@@ -209,9 +212,9 @@ def main():
         with open(os.path.join(FLAGS.gpt_model_name, 'hparams.json')) as f:
             hparams.override_from_dict(json.load(f))
 
-        dataloader = DataLoader(processed_data_dir, FLAGS.limits, eos, empty)
-        field_id2word = dataloader.fieldid2word
-        gpt_out_mask = dataloader.gpt_out_mask
+        preprocessed_data = Preprocessor(processed_data_dir, FLAGS.limits, eos, empty)
+        field_id2word = preprocessed_data.fieldid2word
+        gpt_out_mask = preprocessed_data.gpt_out_mask
 
         model = SeqUnit(batch_size=FLAGS.batch_size, hidden_size=FLAGS.hidden_size,
                         emb_size=FLAGS.emb_size, field_size=FLAGS.field_size,
@@ -246,11 +249,11 @@ def main():
             seq2seq_var.append(model.embedding)
             sess.run(tf.variables_initializer(var_list=seq2seq_var))
 
-            train(sess, dataloader, model)
+            train(sess, preprocessed_data, model)
 
         else:
             model.load(saved_model_path, sess)
-            test_result = evaluate(sess, dataloader, model, results_path, 'test')
+            test_result = evaluate(sess, preprocessed_data, model, results_path, 'test')
             write_log(log_file, test_result)
 
 

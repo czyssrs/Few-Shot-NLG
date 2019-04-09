@@ -243,14 +243,3 @@ def write_log(log_file, s):
     print(s)
     with open(log_file, 'a') as f:
         f.write(s+'\n')
-
-
-def save_model(model, sess, save_dir, cnt):
-    new_dir = os.path.join(save_dir, 'loads')
-    if not os.path.exists(new_dir):
-        os.mkdir(new_dir)
-    nnew_dir = os.path.join(new_dir, str(cnt))
-    if not os.path.exists(nnew_dir):
-        os.mkdir(nnew_dir)
-    model.save(nnew_dir, sess)
-    return nnew_dir
