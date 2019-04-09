@@ -146,7 +146,7 @@ class DataLoader:
         return self.get_batch()
 
     def __len__(self):
-        return self.data_size
+        return self.num_batches
 
     def reset(self):
         self.count = 0

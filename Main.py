@@ -48,10 +48,10 @@ tf.app.flags.DEFINE_integer("source_vocab", 50257,'vocabulary size')
 tf.app.flags.DEFINE_integer("field_vocab", 2756,'vocabulary size')
 tf.app.flags.DEFINE_integer("position_vocab", 31,'vocabulary size')
 tf.app.flags.DEFINE_integer("target_vocab", 50257,'vocabulary size')
-tf.app.flags.DEFINE_integer("report", 50,'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report", 10,'report valid results after some steps')
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
-tf.app.flags.DEFINE_integer("report_loss", 20,'report loss results after some steps')
+tf.app.flags.DEFINE_integer("report_loss", 10,'report loss results after some steps')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -94,8 +94,7 @@ def train(sess, preprocessed_data, model):
         write_log(log_file, attr + " = " + str(value))
     write_log(log_file, "#######################################################")
 
-    trainset = preprocessed_data.train_set
-    train_iterator = DataLoader(trainset, preprocessed_data.target_vocab, FLAGS.domain,
+    train_iterator = DataLoader(preprocessed_data.train_set, preprocessed_data.target_vocab, FLAGS.domain,
                                 batch_size=FLAGS.batch_size, shuffle=True, eos=eos, empty=empty)
 
     k = 0
@@ -109,10 +108,9 @@ def train(sess, preprocessed_data, model):
     for _ in range(FLAGS.epoch):
         for x in tqdm(train_iterator):
             model(x, sess, 0)
-
             k += 1
+            #TODO also add to tensorboard
             if k % FLAGS.batch_update == 0:
-                print("updating accumulated gradient and reset")
                 this_loss, this_copy_gate_loss, this_cov_loss = model(x, sess, 1)
                 record_loss += this_loss
                 record_copy_loss += this_copy_gate_loss
@@ -142,17 +140,21 @@ def train(sess, preprocessed_data, model):
 
                         results_path_cnt = os.path.join(results_path, 'loads', record_k // FLAGS.report)
                         os.makedirs(results_path_cnt, exist_ok=True)
-                        validation_result = evaluate(sess, dataloader, model, results_path_cnt, 'valid')
+                        validation_result = evaluate(sess, preprocessed_data, model, results_path_cnt, 'valid')
                         write_log(log_file, validation_result)
 
 
-def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
+def evaluate(sess, preprocessed_data, model, ksave_dir, mode='valid'):
     if mode == 'valid':
         gold_path = gold_path_valid
-        evalset = dataloader.dev_set
+        data_iterator = DataLoader(preprocessed_data.dev_set, preprocessed_data.target_vocab,
+                                    FLAGS.domain, batch_size=FLAGS.batch_size, shuffle=True,
+                                    eos=eos, empty=empty)
     else:
         gold_path = gold_path_test
-        evalset = dataloader.test_set
+        data_iterator = DataLoader(preprocessed_data.test_set, preprocessed_data.target_vocab,
+                                   FLAGS.domain, batch_size=FLAGS.batch_size, shuffle=True, eos=eos,
+                                   empty=empty)
 
     pred_list = []
     pred_unk = []
@@ -165,7 +167,7 @@ def evaluate(sess, dataloader, model, ksave_dir, mode='valid'):
     pred_path = os.path.join(ksave_dir_mode,  mode + "_pred_summary_")
 
     k = 0
-    for x in tqdm(dataloader.batch_iter(evalset, FLAGS.batch_size, False, domain=FLAGS.domain)):
+    for x in tqdm(data_iterator):
         predictions, atts = model.generate(x, sess)
 
         for summary in np.array(predictions):
