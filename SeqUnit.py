@@ -355,8 +355,7 @@ class SeqUnit(object):
         presents = lm_output['present']
         hidden = lm_output['hidden']
         presents.set_shape(past_shape(hparams=hparams, batch_size=batch_size))
-        return {'logits': logits,  # [batch, sequence, hparams.n_vocab]
-            'presents': presents, 'hidden': hidden}
+        return {'logits': logits, 'presents': presents, 'hidden': hidden}
 
     def decoder_t(self, inputs, inputs_len, x0, past0, hidden0):
         """
@@ -371,7 +370,7 @@ class SeqUnit(object):
         Returns:
 
         """
-        ### gather p_gen and att_weights
+        # gather p_gen and att_weights
         batch_size = tf.shape(self.decoder_input)[0]
         max_time = tf.shape(self.decoder_input)[1]
         encoder_len = tf.shape(self.encoder_embed)[1]
@@ -384,7 +383,7 @@ class SeqUnit(object):
         emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
         emit_gate = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
-        ### coverage mechanisim
+        # coverage mechanism
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
         covloss0 = 0.0
 
@@ -405,19 +404,15 @@ class SeqUnit(object):
             Returns:
 
             """
-            # with tf.device("/gpu:1"):
-            ### gpt generate
+            # gpt generate
+            temperature = 1.0  # hard coded temperature or noise in GPT logit output
             next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
-            logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
-            o_dist = tf.nn.softmax(logits) 
-
-            # o_dist *= self.gpt_out_mask
-
+            logits = next_outputs['logits'][:, -1, :] / tf.to_float(temperature)
+            o_dist = tf.nn.softmax(logits)
             past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
             hidden_nt = next_outputs['hidden'][:, -1, :]
 
-
-            ### concat field pos
+            # concat field pos embedding
             batch_nums_time = tf.range(0, limit=batch_size)
             time_batch = tf.fill([batch_size], t)
             collect_ind = tf.stack([batch_nums_time, time_batch], axis=1)
@@ -425,15 +420,16 @@ class SeqUnit(object):
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
             att_x_in = tf.concat([att_x_in, this_field_pos_emb], axis=1)
 
-            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed, finished=finished)
+            # pass the hidden weights into the attention layer to get
+            # gen gate probability
+            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum,
+                                             self.en_outputs, self.field_pos_embed, finished=finished)
 
-
-            ### o_weight = batch * len, already normalized. p_gen = batch * 1
+            # generative probabilty is weighted product of gen gate probability and gpt softmax
             out_dist = p_gen * o_dist # batch * self.target_vocab
-            # att_dist = (1 - p_gen) * o_weight # batch * len
+
+            # project pointer output logits into target vocabulary
             att_dist = o_weight
-
-
             batch_nums = tf.range(0, limit=batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1)
             batch_nums = tf.tile(batch_nums, [1, encoder_len])
@@ -441,27 +437,26 @@ class SeqUnit(object):
             shape = [batch_size, self.target_vocab]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape)
 
-            # final_dists = out_dist + attn_dists_projected
+            # combine both weighted probabilities
             final_dists = out_dist + (1 - p_gen) * attn_dists_projected
-            # ### if only gpt?
-            # final_dists = o_dist
 
+            # consider only those locations with field values in the output
             copy_mask = tf.gather_nd(self.copy_gate_mask, collect_ind)
 
+            # write to tensor array
             emit_gate = emit_gate.write(t, tf.multiply(p_gen, copy_mask))
             emit_ta = emit_ta.write(t, final_dists)
 
-
-
-            ### coverage
+            # FIXME what
             this_covloss = tf.reduce_sum(tf.minimum(coverage_att_sum, o_weight))
             covloss += this_covloss
             coverage_att_sum += o_weight
 
-
+            # stop condition
             finished = tf.greater_equal(t, inputs_len)
             x_nt = tf.cond(tf.reduce_all(finished), lambda: tf.fill([batch_size], self.stop_token),
                                      lambda: inputs_ta.read(t))
+
             return t+1, x_nt, past_nt, hidden_nt, emit_ta, emit_gate, coverage_att_sum, covloss, finished
 
         _, _, past_final, hidden_final, emit_ta, emit_gate, coverage_att_sum, emit_covloss, _ = tf.while_loop(
@@ -490,7 +485,7 @@ class SeqUnit(object):
         time = tf.constant(0, dtype=tf.int32)
         f0 = tf.zeros([batch_size], dtype=tf.bool)
 
-        ### concat with field + pos + rpos to input
+        # concat with field + pos + rpos to input
         x0_field = tf.nn.embedding_lookup(self.embedding, tf.fill([batch_size], self.empty_token))
         x0_pos = tf.nn.embedding_lookup(self.pembedding, tf.zeros([batch_size], dtype=tf.int32))
         x0_rpos = tf.nn.embedding_lookup(self.rembedding, tf.zeros([batch_size], dtype=tf.int32))
@@ -499,39 +494,53 @@ class SeqUnit(object):
         emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
         att_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
 
-        ### coverage mechanisim
+        # coverage mechanisim
         coverage_att_sum = tf.zeros([batch_size, encoder_len], dtype=tf.float32)
 
         att_mask = tf.ones([batch_size, encoder_len], dtype=tf.float32)
 
-        # gpt_mask_layer = tf.expand_dims(self.gpt_out_mask, 0)
-        # gpt_mask_layer = tf.tile(gpt_mask_layer, [batch_size, 1])
-
         def loop_fn(t, x_t, past, hidden, field_pos_emb, emit_ta, att_ta, coverage_att_sum, att_mask, finished):
+            """
 
+            Args:
+                t:
+                x_t:
+                past:
+                hidden:
+                field_pos_emb:
+                emit_ta:
+                att_ta:
+                coverage_att_sum:
+                att_mask:
+                finished:
+
+            Returns:
+
+            """
+            # gpt generate
+            temperature = 1.0  # hard coded temperature or noise in GPT logit output
             next_outputs = self.step_gpt(self.gpt_hparams, x_t[:, tf.newaxis], self.batch_size, past=past)
-            logits = next_outputs['logits'][:, -1, :]  / tf.to_float(1) # temperator = 1
-            o_dist = tf.nn.softmax(logits) 
-            # o_dist *= self.gpt_out_mask
-
+            logits = next_outputs['logits'][:, -1, :] / tf.to_float(temperature)
+            o_dist = tf.nn.softmax(logits)
             past_nt = tf.concat([past, next_outputs['presents']], axis=-2)
             hidden_nt = next_outputs['hidden'][:, -1, :]
 
+            # concat field pos embedding
             att_x_in = tf.nn.embedding_lookup(self.embedding, x_t)
             att_x_in = tf.concat([att_x_in, field_pos_emb], axis=1)
 
-            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum, self.en_outputs, self.field_pos_embed, finished=finished)
+            # pass the hidden weights into the attention layer to get
+            # gen gate probability
+            o_weight, p_gen = self.att_layer(hidden_nt, att_x_in, hidden, coverage_att_sum,
+                                             self.en_outputs, self.field_pos_embed, finished=finished)
 
-
-            ### o_weight = batch * len, already normalized. p_gen = batch * 1
+            # generative probabilty is weighted product of gen gate probability and gpt softmax
             out_dist = p_gen * o_dist # batch * self.target_vocab
-            att_dist = (1 - p_gen) * o_weight # batch * len
+
 
             ### mask previous
-
+            att_dist = (1 - p_gen) * o_weight  # batch * len
             att_dist *= att_mask
-
-
             batch_nums = tf.range(0, limit=batch_size) # shape (batch_size)
             batch_nums = tf.expand_dims(batch_nums, 1) # shape (batch_size, 1)
             batch_nums = tf.tile(batch_nums, [1, encoder_len]) # shape (batch_size, enc_len)
@@ -539,19 +548,20 @@ class SeqUnit(object):
             shape = [batch_size, self.target_vocab]
             attn_dists_projected = tf.scatter_nd(indices, att_dist, shape) # batch * target_vocab
 
+            # combine both weighted probabilities
             final_dists = out_dist + attn_dists_projected
 
-            ### coverage
+            # coverage
             coverage_att_sum += o_weight
 
-
+            # write to tensor array
             emit_ta = emit_ta.write(t, final_dists)
             att_ta = att_ta.write(t, tf.transpose(o_weight, [1,0]))
+
+            # FIXME what
             x_nt = tf.cast(tf.argmax(final_dists, 1), tf.int32)
 
-
-
-            ### field pos emb next round
+            # field pos emb next round
             next_token_att = tf.cast(tf.argmax(attn_dists_projected, 1), tf.int32)
             mask = tf.cast(tf.equal(x_nt, next_token_att), tf.int32)
 
@@ -566,7 +576,6 @@ class SeqUnit(object):
             this_dec_pos_id = this_dec_pos_id * mask
             this_dec_rpos_id = this_dec_rpos_id * mask
 
-
             this_dec_field_word = tf.nn.embedding_lookup(self.field_id2word, this_dec_field_id) # batch * 3
             this_dec_field_emb = tf.reduce_mean(
                                 tf.nn.embedding_lookup(self.embedding, this_dec_field_word), 1) # batch_size * field_emb_size
@@ -576,10 +585,7 @@ class SeqUnit(object):
 
             field_pos_nt = tf.concat([this_dec_field_emb, this_dec_pos_emb, this_dec_rpos_emb], 1)
 
-
-
-
-            ### mask atten pos of previous
+            # mask atten pos of previous
             att_pos *= mask
             att_pos_tile = tf.expand_dims(att_pos, 1)
             att_pos_tile = tf.tile(att_pos_tile, [1, encoder_len])
@@ -588,9 +594,6 @@ class SeqUnit(object):
             att_mask_enc = tf.tile(att_mask_enc, [batch_size, 1])
             mask_enc = tf.cast(tf.not_equal(att_pos_tile, att_mask_enc), tf.float32)
             att_mask *= mask_enc
-
-
-
 
             finished = tf.logical_or(finished, tf.equal(x_nt, self.stop_token))
             finished = tf.logical_or(finished, tf.greater_equal(t, self.max_length))
