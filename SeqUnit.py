@@ -10,7 +10,6 @@ from AttentionUnit import AttentionWrapper
 from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
-from OutputUnit import OutputUnit
 from model import *
 
 
@@ -86,15 +85,6 @@ class SeqUnit(object):
 
         context_outputs = self.define_decoder_arch()
 
-        # get start token #FIXME why
-        logits0 = context_outputs['logits'][:, -1, :]
-        dist0 = tf.nn.softmax(logits0) # start token
-        x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
-
-        # FIXME what
-        past0 = context_outputs['presents']
-        hidden0 = context_outputs['hidden'][:, -1, :]
-
         # get GPT embeddings
         self.lookup_all_embeddings()
 
@@ -113,11 +103,19 @@ class SeqUnit(object):
                 self.units.update({'attention': self.att_layer})
 
         # loss functions
+        # calculate those locations where field values are present
         self.copy_gate_mask = tf.cast(
                         tf.greater(self.decoder_pos_input, tf.zeros_like(self.decoder_pos_input)), tf.float32)
         self.copy_gate_mask = tf.concat([self.copy_gate_mask, tf.zeros([tf.shape(self.encoder_input)[0], 1], tf.float32)], 1)
 
         # decoder for training
+        # get start values to start gpt generation
+        logits0 = context_outputs['logits'][:, -1, :]
+        dist0 = tf.nn.softmax(logits0) # start token
+        x0 = tf.cast(tf.argmax(dist0, 1), tf.int32)
+        past0 = context_outputs['presents']
+        hidden0 = context_outputs['hidden'][:, -1, :]
+
         de_outputs, _, self.de_conv_loss, self.copy_gate_loss = self.decoder_t(self.decoder_input, self.decoder_len, x0, past0, hidden0)
 
         # decoder for testing
@@ -163,30 +161,30 @@ class SeqUnit(object):
             self.grads, _ = tf.clip_by_global_norm(tf.gradients(self.mean_loss, train_params, colocate_gradients_with_ops=True), self.grad_clip)
 
         # accumulate gradient
-        self.opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
-        self.acc_gradients = list(map(lambda param: tf.get_variable(param.name.split(":")[0],
-                                                                param.get_shape(), param.dtype,
-                                                                tf.constant_initializer(0.0), trainable=False),
-                                                                train_params))
+            self.opt = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            self.acc_gradients = list(map(lambda param: tf.get_variable(param.name.split(":")[0],
+                                                                    param.get_shape(), param.dtype,
+                                                                    tf.constant_initializer(0.0), trainable=False),
+                                                                    train_params))
 
-        # initialize losses?
-        self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
-        self._cov_loss = tf.get_variable("acc_cov_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
-        self._gate_loss = tf.get_variable("acc_gate_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+            # initialize losses?
+            self._loss = tf.get_variable("acc_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+            self._cov_loss = tf.get_variable("acc_cov_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
+            self._gate_loss = tf.get_variable("acc_gate_loss", (), tf.float32, tf.constant_initializer(0.0), trainable=False)
 
-        self.accumulate_gradients()
+            self.accumulate_gradients()
 
-        # train update
-        self.update = self.opt.apply_gradients(
-            zip(list(map(lambda v: v.value(), self.acc_gradients)), train_params), global_step=self.global_step)
+            # train update
+            self.update = self.opt.apply_gradients(
+                zip(list(map(lambda v: v.value(), self.acc_gradients)), train_params), global_step=self.global_step)
 
-        # collect all values to reset after updating with accumulated gradient
-        self.reset = list(map(lambda param: param.initializer, self.acc_gradients))
-        self.reset.append(self._loss.initializer)
-        self.reset.append(self._cov_loss.initializer)
-        self.reset.append(self._gate_loss.initializer)
+            # collect all values to reset after updating with accumulated gradient
+            self.reset = list(map(lambda param: param.initializer, self.acc_gradients))
+            self.reset.append(self._loss.initializer)
+            self.reset.append(self._cov_loss.initializer)
+            self.reset.append(self._gate_loss.initializer)
 
-        self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
+            self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1)
 
     def accumulate_gradients(self):
         # We abuse the gradient descent optimizer for accumulating gradients and loss (summing)
@@ -447,7 +445,6 @@ class SeqUnit(object):
             emit_gate = emit_gate.write(t, tf.multiply(p_gen, copy_mask))
             emit_ta = emit_ta.write(t, final_dists)
 
-            # FIXME what
             this_covloss = tf.reduce_sum(tf.minimum(coverage_att_sum, o_weight))
             covloss += this_covloss
             coverage_att_sum += o_weight
@@ -558,7 +555,6 @@ class SeqUnit(object):
             emit_ta = emit_ta.write(t, final_dists)
             att_ta = att_ta.write(t, tf.transpose(o_weight, [1,0]))
 
-            # FIXME what
             x_nt = tf.cast(tf.argmax(final_dists, 1), tf.int32)
 
             # field pos emb next round
