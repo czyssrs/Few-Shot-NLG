@@ -158,7 +158,7 @@ if __name__ == "__main__":
     file_name = sys.argv[1]
     dem_file = sys.argv[2]
     elements = parse_file(file_name)
-    avg_coverage = {'gold': 0.0, 'gpt': 0.0, 'ours': 0.0}
+    avg_coverage = {'gold': [], 'gpt': [], 'ours': []}
     n_elem = 0
     for sample in tqdm(elements):
         results = extract_structure_from_sample(sample)
@@ -175,14 +175,19 @@ if __name__ == "__main__":
                                                                                 dem_file)
 
             n_fields = len(gold_coverage) + len(gold_no_coverage)
-            avg_coverage['gold'] = 1.* len(gold_coverage) / n_fields
-            avg_coverage['gpt'] = 1. * len(gpt_coverage) / n_fields
-            avg_coverage['ours'] = 1. * len(ours_coverage) / n_fields
+            avg_coverage['gold'].append((1.* len(gold_coverage) / n_fields))
+            avg_coverage['gpt'].append((1. * len(gpt_coverage) / n_fields))
+            avg_coverage['ours'].append((1. * len(ours_coverage) / n_fields))
 
-    avg_coverage['gold'] /= n_elem
-    avg_coverage['gpt'] /= n_elem
-    avg_coverage['ours'] /= n_elem
+        import matplotlib.pyplot as plt
 
-    print(avg_coverage)
+    colors = ['#E69F00', '#56B4E9', '#F0E442']
+    plt.figure()
+    plt.hist([avg_coverage['gold'], avg_coverage['gpt'], avg_coverage['ours']],
+             bins=20, stacked=False, normed=True, color=colors,
+             label=['gold', 'gpt', 'ours'])
+    plt.legend()
+    plt.savefig("facts.png")
+    import ipdb; ipdb.set_trace()
 
 
