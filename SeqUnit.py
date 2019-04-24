@@ -246,8 +246,7 @@ class SeqUnit(object):
 
     def define_encoder_arch(self):
         if self.encoder_type == "mlp":
-            self.en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed,
-                                                           self.encoder_len)  # plus domain embedding
+            self.en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len)  # plus domain embedding
         else:
             if self.fgate_enc:
                 print('field gated encoder used')
@@ -343,6 +342,41 @@ class SeqUnit(object):
             loop_vars=(time, inputs_ta.read(0), fields_ta.read(0), h0, emit_ta, f0))
 
         outputs = tf.transpose(emit_ta.stack(), [1,0,2])
+        return outputs, state
+
+    def encoder(self, inputs, inputs_len):
+        batch_size = tf.shape(self.encoder_input)[0]
+        max_time = tf.shape(self.encoder_embed)[1]
+        hidden_size = self.hidden_size
+
+        time = tf.constant(0, dtype=tf.int32)
+        h0 = (tf.zeros([batch_size, hidden_size], dtype=tf.float32),
+              tf.zeros([batch_size, hidden_size], dtype=tf.float32))
+        f0 = tf.zeros([batch_size], dtype=tf.bool)
+        inputs_ta = tf.TensorArray(dtype=tf.float32, size=max_time)
+        inputs_ta = inputs_ta.unstack(tf.transpose(inputs, [1,0,2]))
+        emit_ta = tf.TensorArray(dtype=tf.float32, dynamic_size=True, size=0)
+
+        def loop_fn(t, x_t, s_t, emit_ta, finished):
+            o_t, s_nt = self.enc_lstm(x_t, s_t, finished)
+            emit_ta = emit_ta.write(t, o_t)
+            finished = tf.greater_equal(t+1, inputs_len)
+            x_nt = tf.cond(tf.reduce_all(finished), lambda: tf.zeros([batch_size, self.uni_size], dtype=tf.float32),
+                                     lambda: inputs_ta.read(t+1))
+            return t+1, x_nt, s_nt, emit_ta, finished
+
+        _, _, _, state, emit_ta, _ = tf.while_loop(
+            cond=lambda _1, _2, _3, _4, _5, finished: tf.logical_not(tf.reduce_all(finished)),
+            body=loop_fn,
+            loop_vars=(time, inputs_ta.read(0), h0, emit_ta, f0))
+
+        outputs = tf.transpose(emit_ta.stack(), [1,0,2])
+        return outputs, state
+
+    def mlp_encoder(self, inputs, inputs_len):
+
+        outputs, state = self.enc_lstm(inputs, inputs)
+        
         return outputs, state
 
     def step_gpt(self, hparams, tokens, batch_size, past=None):

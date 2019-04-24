@@ -16,7 +16,7 @@ class LstmUnit(object):
 
         with tf.variable_scope(scope_name):
             self.W = tf.get_variable('W', [self.input_size+self.hidden_size, 4*self.hidden_size])
-            self.b = tf.get_variable('b', [4*self.hidden_size], initializer=tf.zeros_initializer([4*self.hidden_size]), dtype=tf.float32)
+            self.b = tf.get_variable('b', [4*self.hidden_size], initializer=tf.zeros_initializer(), dtype=tf.float32)
 
         self.params.update({'W':self.W, 'b':self.b})
 

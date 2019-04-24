@@ -11,25 +11,19 @@ class mlpUnit(object):
 
         with tf.variable_scope(scope_name):
             self.W = tf.get_variable('W', [self.input_size, self.hidden_size])
-            self.b = tf.get_variable('b', [self.hidden_size], initializer=tf.zeros_initializer([self.hidden_size]), dtype=tf.float32)
+            self.b = tf.get_variable('b', [self.hidden_size], initializer=tf.zeros_initializer(), dtype=tf.float32)
 
         self.params.update({'W':self.W, 'b':self.b})
 
-    def __call__(self, x, s, finished = None):
+    def __call__(self, x, s, finished=None):
         h_prev, c_prev = s # dummy, of no use here
 
         c = tf.nn.xw_plus_b(x, self.W, self.b)
 
         # Final Memory cell
-        h = tf.relu(c)
+        h = tf.nn.relu(c)
 
         out, state = h, (h, c) # state is dummy
-        if finished is not None:
-            out = tf.where(finished, tf.zeros_like(h), h)
-            state = (tf.where(finished, h_prev, h), tf.where(finished, c_prev, c))
-            # out = tf.multiply(1 - finished, h)
-            # state = (tf.multiply(1 - finished, h) + tf.multiply(finished, h_prev),
-            #          tf.multiply(1 - finished, c) + tf.multiply(finished, c_prev))
 
         return out, state
 

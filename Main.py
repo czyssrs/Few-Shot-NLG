@@ -26,9 +26,9 @@ tf.app.flags.DEFINE_string("saved_model_path",'temp','saved model path for use i
 
 # architecture choices
 tf.app.flags.DEFINE_boolean("use_coverage", False,'use coverage or not')
-tf.app.flags.DEFINE_float("coverage_penalty", 0.02,'coverage loss penalty')
+tf.app.flags.DEFINE_float("coverage_penalty", 0.0,'coverage loss penalty')
 tf.app.flags.DEFINE_boolean("use_copy_gate", True,'use copy gate or not')
-tf.app.flags.DEFINE_float("copy_gate_penalty", 0.01, 'copy gate loss penalty')
+tf.app.flags.DEFINE_float("copy_gate_penalty", 0.5, 'copy gate loss penalty')
 tf.app.flags.DEFINE_boolean("dual_attention", True,'dual attention layer or normal attention')
 tf.app.flags.DEFINE_boolean("fgate_encoder", True,'add field gate in encoder lstm')
 
@@ -56,8 +56,8 @@ tf.app.flags.DEFINE_integer("epoch", 5000, "Number of training epoch.")
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
 # logging
-tf.app.flags.DEFINE_integer("report", 10,'report valid results after some steps')
-tf.app.flags.DEFINE_integer("report_loss", 10,'report loss results after some steps')
+tf.app.flags.DEFINE_integer("report", 50,'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report_loss", 20,'report loss results after some steps')
 
 FLAGS = tf.app.flags.FLAGS
 
