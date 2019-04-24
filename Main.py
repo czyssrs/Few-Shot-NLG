@@ -112,6 +112,7 @@ def train(sess, preprocessed_data, model):
     record_cov_loss = 0.0
 
     for _ in range(FLAGS.epoch):
+        train_iterator.reset()
         for x in tqdm(train_iterator):
             model(x, sess, 0)
             k += 1
@@ -173,6 +174,7 @@ def evaluate(sess, preprocessed_data, model, ksave_dir, mode='valid'):
     pred_path = os.path.join(ksave_dir_mode,  mode + "_pred_summary_")
 
     k = 0
+    data_iterator.reset()
     for x in tqdm(data_iterator):
         predictions, atts = model.generate(x, sess)
 

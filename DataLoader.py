@@ -186,6 +186,9 @@ class DataLoader:
                    data['cont_path'][start_index:end_index])
 
     def get_batch(self):
+        if self.count >= self.num_batches:
+            raise StopIteration("Ran out of data.")
+
         start_index = self.count * self.batch_size
         end_index = min((self.count + 1) * self.batch_size, self.data_size)
 
