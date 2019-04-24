@@ -246,7 +246,7 @@ class SeqUnit(object):
 
     def define_encoder_arch(self):
         if self.encoder_type == "mlp":
-            self.en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len)  # plus domain embedding
+            self.en_outputs, en_state = self.mlp_encoder(self.encoder_embed, self.encoder_len)  # plus domain embedding
         else:
             if self.fgate_enc:
                 print('field gated encoder used')
@@ -375,9 +375,9 @@ class SeqUnit(object):
 
     def mlp_encoder(self, inputs, inputs_len):
 
-        outputs, state = self.enc_lstm(inputs, inputs)
-        
-        return outputs, state
+        outputs = self.enc_lstm(inputs)
+
+        return outputs, outputs
 
     def step_gpt(self, hparams, tokens, batch_size, past=None):
         """

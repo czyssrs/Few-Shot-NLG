@@ -15,10 +15,9 @@ class mlpUnit(object):
 
         self.params.update({'W':self.W, 'b':self.b})
 
-    def __call__(self, x, s, finished=None):
-        h_prev, c_prev = s # dummy, of no use here
+    def __call__(self, x, finished=None):
 
-        c = tf.nn.xw_plus_b(x, self.W, self.b)
+        c = tf.einsum('cti,ih->cth', x, self.W) + self.b
 
         # Final Memory cell
         h = tf.nn.relu(c)
