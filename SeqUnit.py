@@ -10,6 +10,7 @@ from AttentionUnit import AttentionWrapper
 from dualAttentionUnit import dualAttentionWrapper
 from LstmUnit import LstmUnit
 from fgateLstmUnit import fgateLstmUnit
+from mlpUnit import mlpUnit
 from model import *
 
 
@@ -17,7 +18,8 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, vocab_ind, empty_token=28920, stop_token=50256, max_length=85):
+                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, gpt_out_mask, vocab_ind,
+                 empty_token=28920, stop_token=50256, max_length=85, encoder_type='mlp'):
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
         source_vocab, target_vocab, field_vocab, position_vocab: vocabulary size of encoder words; decoder words; field types; position
@@ -52,6 +54,7 @@ class SeqUnit(object):
         self.dual_att = dual_att
         self.scope_name = scope_name
         self.name = name
+        self.encoder_type = encoder_type
 
         # embedding sizes
         self.emb_size = self.gpt_hparams.n_embd # word embedding size
@@ -226,24 +229,32 @@ class SeqUnit(object):
             None
         """
         with tf.variable_scope(self.scope_name):
-            if self.fgate_enc:
-                print('field-gated encoder LSTM')
-                self.enc_lstm = fgateLstmUnit(self.hidden_size, self.uni_size,
-                                              self.field_encoder_size, 'encoder_select')
+            if self.encoder_type == 'mlp':
+                self.enc_lstm = mlpUnit(self.hidden_size, self.uni_size,
+                                        'encoder_select')
             else:
-                print('normal encoder LSTM')
-                self.enc_lstm = LstmUnit(self.hidden_size, self.uni_size, 'encoder_lstm')
+                if self.fgate_enc:
+                    print('field-gated encoder LSTM')
+                    self.enc_lstm = fgateLstmUnit(self.hidden_size, self.uni_size,
+                                                  self.field_encoder_size, 'encoder_select')
+                else:
+                    print('normal encoder LSTM')
+                    self.enc_lstm = LstmUnit(self.hidden_size, self.uni_size, 'encoder_lstm')
 
         self.units.update({'encoder_lstm': self.enc_lstm})
         return
 
     def define_encoder_arch(self):
-        if self.fgate_enc:
-            print('field gated encoder used')
-            self.en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed, self.encoder_len) # plus domain embedding
+        if self.encoder_type == "mlp":
+            self.en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed,
+                                                           self.encoder_len)  # plus domain embedding
         else:
-            print('normal encoder used')
-            self.en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len) #FIXME where is this
+            if self.fgate_enc:
+                print('field gated encoder used')
+                self.en_outputs, en_state = self.fgate_encoder(self.encoder_embed, self.field_pos_embed, self.encoder_len) # plus domain embedding
+            else:
+                print('normal encoder used')
+                self.en_outputs, en_state = self.encoder(self.encoder_embed, self.encoder_len) #FIXME where is this
 
     def define_decoder_arch(self):
         # define GPT decoder
