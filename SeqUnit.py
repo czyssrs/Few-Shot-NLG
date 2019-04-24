@@ -375,9 +375,9 @@ class SeqUnit(object):
 
     def mlp_encoder(self, inputs, inputs_len):
 
-        outputs = self.enc_lstm(inputs)
+        outputs, state = self.enc_lstm(inputs)
 
-        return outputs, outputs
+        return outputs, state
 
     def step_gpt(self, hparams, tokens, batch_size, past=None):
         """
