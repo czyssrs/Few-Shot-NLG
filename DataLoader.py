@@ -133,6 +133,7 @@ class DataLoader:
         self.eos = eos
         self.empty = empty
         self.data_size = len(data['summary'])
+        self.shuffle = shuffle
         self.num_batches = int(self.data_size / batch_size) if self.data_size % batch_size == 0 \
             else int(self.data_size / batch_size) + 1
         if shuffle:
@@ -150,7 +151,8 @@ class DataLoader:
 
     def reset(self):
         self.count = 0
-        self.shuffle_all_data()
+        if self.shuffle:
+            self.shuffle_all_data()
 
     def shuffle_all_data(self):
         """
@@ -295,6 +297,8 @@ class DataLoader:
 
             batch_data['enc_in_real'].append(text_real)
             batch_data['dec_in_real'].append(dec_real)
+
+        self.count += 1
 
         return batch_data
 

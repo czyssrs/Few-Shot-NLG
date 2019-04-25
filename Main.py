@@ -152,15 +152,16 @@ def train(sess, preprocessed_data, model):
 
 
 def evaluate(sess, preprocessed_data, model, ksave_dir, mode='valid'):
+    print("Starting performance evaluation")
     if mode == 'valid':
         gold_path = gold_path_valid
         data_iterator = DataLoader(preprocessed_data.dev_set, preprocessed_data.target_vocab,
-                                    FLAGS.domain, batch_size=FLAGS.batch_size, shuffle=True,
+                                    FLAGS.domain, batch_size=FLAGS.batch_size, shuffle=False,
                                     eos=eos, empty=empty)
     else:
         gold_path = gold_path_test
         data_iterator = DataLoader(preprocessed_data.test_set, preprocessed_data.target_vocab,
-                                   FLAGS.domain, batch_size=FLAGS.batch_size, shuffle=True, eos=eos,
+                                   FLAGS.domain, batch_size=FLAGS.batch_size, shuffle=False, eos=eos,
                                    empty=empty)
 
     pred_list = []
