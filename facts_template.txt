@@ -1,0 +1,355 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1504\cocoasubrtf830
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 <!-- You must include this JavaScript file -->\
+<script src="https://assets.crowd.aws/crowd-html-elements.js"></script>\
+\
+<!-- For the full list of available Crowd HTML Elements and their input/output documentation,\
+      please refer to https://docs.aws.amazon.com/sagemaker/latest/dg/sms-ui-template-reference.html -->\
+<style>\
+    table, th, td \{\
+  margin-left: auto;\
+  margin-right: auto;\
+  border-spacing: 0px;\
+\}\
+td\{\
+    border-style: none; \
+    padding: 0px; \
+    line-height: 2em;\
+    height: 0px;\
+\}\
+html, body \{\
+ margin: 5px;\
+ padding: 5px;\
+ border: 0px;\
+ color: #000;\
+ background: #fff;\
+ \}\
+ html, body, p, th, td, li, dd, dt \{\
+ font: 1em Helvetica;\
+ \}\
+ h1, h2, h3, h4, h5, h6 \{\
+ font-family: Helvetica;\
+ \}\
+ h1 \{ font-size: 2em; \}\
+ h2 \{ font-size: 1.5em; \}\
+ h3 \{ font-size: 1.2em ; \}\
+ h4 \{ font-size: 1.0em; \}\
+ h5 \{ font-size: 0.9em; \}\
+ h6 \{ font-size: 0.8em; \}\
+</style>\
+<!-- You must include crowd-form so that your task submits answers to MTurk -->\
+<crowd-form answer-format="flatten-objects">\
+    \
+    <table><caption>Table:</caption>\
+      <tr>\
+    <td>$\{field1\}</td>\
+    <td>$\{value1\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field2\}</td>\
+    <td>$\{value2\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field3\}</td>\
+    <td>$\{value3\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field4\}</td>\
+    <td>$\{value4\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field5\}</td>\
+    <td>$\{value5\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field6\}</td>\
+    <td>$\{value6\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field7\}</td>\
+    <td>$\{value7\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field8\}</td>\
+    <td>$\{value8\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field9\}</td>\
+    <td>$\{value9\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field10\}</td>\
+    <td>$\{value10\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field11\}</td>\
+    <td>$\{value11\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field12\}</td>\
+    <td>$\{value12\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field13\}</td>\
+    <td>$\{value13\}</td> \
+  </tr>  \
+  <tr>\
+    <td>$\{field14\}</td>\
+    <td>$\{value14\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field15\}</td>\
+    <td>$\{value15\}</td> \
+  </tr>\
+  <tr>\
+    <td>$\{field16\}</td>\
+    <td>$\{value16\}</td> \
+  </tr>  \
+  <tr>\
+    <td>$\{field17\}</td>\
+    <td>$\{value17\}</td> \
+  </tr> \
+  <tr>\
+    <td>$\{field18\}</td>\
+    <td>$\{value18\}</td> \
+  </tr> \
+   <tr>\
+    <td>$\{field19\}</td>\
+    <td>$\{value19\}</td> \
+  </tr> \
+    <tr>\
+    <td>$\{field20\}</td>\
+    <td>$\{value20\}</td> \
+  </tr> \
+    <tr>\
+    <td>$\{field21\}</td>\
+    <td>$\{value21\}</td> \
+  </tr> \
+  <tr>\
+    <td>$\{field22\}</td>\
+    <td>$\{value22\}</td> \
+  </tr> \
+    <tr>\
+    <td>$\{field23\}</td>\
+    <td>$\{value23\}</td> \
+  </tr> \
+    <tr>\
+    <td>$\{field24\}</td>\
+    <td>$\{value24\}</td> \
+  </tr> \
+    <tr>\
+    <td>$\{field25\}</td>\
+    <td>$\{value25\}</td> \
+  </tr> \
+    <tr>\
+    <td>$\{field26\}</td>\
+    <td>$\{value26\}</td> \
+  </tr>   \
+    <tr>\
+    <td>$\{field27\}</td>\
+    <td>$\{value27\}</td> \
+  </tr>   \
+    <tr>\
+    <td>$\{field28\}</td>\
+    <td>$\{value28\}</td> \
+  </tr>   \
+    <tr>\
+    <td>$\{field29\}</td>\
+    <td>$\{value29\}</td> \
+  </tr>   \
+    <tr>\
+    <td>$\{field30\}</td>\
+    <td>$\{value30\}</td> \
+  </tr>   \
+    <tr>\
+    <td>$\{field31\}</td>\
+    <td>$\{value31\}</td> \
+  </tr>   \
+    <tr>\
+    <td>$\{field32\}</td>\
+    <td>$\{value32\}</td> \
+  </tr>  \
+    <tr>\
+    <td>$\{field33\}</td>\
+    <td>$\{value33\}</td> \
+  </tr>  \
+    <tr>\
+    <td>$\{field34\}</td>\
+    <td>$\{value34\}</td> \
+  </tr>  \
+    <tr>\
+    <td>$\{field35\}</td>\
+    <td>$\{value35\}</td> \
+  </tr>  \
+    <tr>\
+    <td>$\{field36\}</td>\
+    <td>$\{value36\}</td> \
+  </tr>  \
+    <tr>\
+    <td>$\{field37\}</td>\
+    <td>$\{value37\}</td> \
+  </tr>  \
+    <tr>\
+    <td>$\{field38\}</td>\
+    <td>$\{value38\}</td> \
+  </tr>\
+    <tr>\
+    <td>$\{field39\}</td>\
+    <td>$\{value39\}</td> \
+  </tr>\
+    <tr>\
+    <td>$\{field40\}</td>\
+    <td>$\{value40\}</td> \
+  </tr>\
+    <tr>\
+    <td>$\{field41\}</td>\
+    <td>$\{value41\}</td> \
+  </tr>\
+    <tr>\
+    <td>$\{field42\}</td>\
+    <td>$\{value42\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field43\}</td>\
+    <td>$\{value43\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field44\}</td>\
+    <td>$\{value44\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field45\}</td>\
+    <td>$\{value45\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field46\}</td>\
+    <td>$\{value46\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field47\}</td>\
+    <td>$\{value47\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field48\}</td>\
+    <td>$\{value48\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field49\}</td>\
+    <td>$\{value49\}</td> \
+  </tr>\
+      <tr>\
+    <td>$\{field50\}</td>\
+    <td>$\{value50\}</td> \
+  </tr>\
+  </table>\
+  <p>Summary: $\{summary\}</p>\
+  <p>Number of facts from summary present in table:\
+  <select name="support">\
+      <option value=1>1</option>\
+      <option value=2>2</option>\
+      <option value=3>3</option>\
+      <option value=4>4</option>\
+      <option value=5>5</option>\
+      <option value=6>6</option>\
+      <option value=7>7</option>\
+      <option value=8>8</option>\
+      <option value=9>9</option>\
+      <option value=10>10</option>\
+      </select>\
+      </p>\
+  <p>Number of facts from summary not present in table:\
+  <select name="contra">\
+      <option value=1>1</option>\
+      <option value=2>2</option>\
+      <option value=3>3</option>\
+      <option value=4>4</option>\
+      <option value=5>5</option>\
+      <option value=6>6</option>\
+      <option value=7>7</option>\
+      <option value=8>8</option>\
+      <option value=9>9</option>\
+      <option value=10>10</option>\
+      </select>\
+      </p>\
+\
+  <crowd-instructions link-text="View instructions" link-type="button">\
+    <short-summary>\
+      <p>Count the number of facts in the summary that are present in table, and absent from the table.</p>\
+    </short-summary>\
+\
+    <detailed-instructions>\
+      <h3>Compare facts in summary with tabular information</h3>\
+      <p>You are presented with an table of property names/values and a text summary. Count the number of facts in the summary that are present in the table, as well as the number of facts in the summary that are missing from the table. For better understanding, please see examples provided.</p>\
+    \
+</detailed-instructions>\
+<positive-example>\
+    <table style="width:100%">\
+      <tr>\
+    <td>name</td>\
+    <td>albert f. polk</td> \
+  </tr>\
+  <tr>\
+    <td>birth_date</td>\
+    <td>11 october 1869</td> \
+  </tr>\
+  <tr>\
+    <td>death_date</td>\
+    <td>14 february 1955</td> \
+  </tr>\
+  <tr>\
+    <td>party</td>\
+    <td>democratic</td> \
+  </tr>\
+  <tr>\
+    <td>birth_place</td>\
+    <td>frederica , delaware</td> \
+  </tr>\
+  <tr>\
+    <td>profession</td>\
+    <td>lawyer</td> \
+  </tr>\
+  </table>\
+      <p>Summary: albert fawcett polk ( march 11 , 1869 -- february 14 , 1955 ) was a democratic party member of the canadian house of commons .</p>\
+      <p>Number of facts present in table: 4, Number of facts absent from table: 1</p>\
+      <p>Name, date of birth, date of death and party affiliation are present in the table, while the membership to the canadian house of commons is absent from the table.</p>\
+</positive-example>\
+<negative-example>\
+    <table style="width:100%">\
+      <tr>\
+    <td>name</td>\
+    <td>albert f. polk</td> \
+  </tr>\
+  <tr>\
+    <td>birth_date</td>\
+    <td>11 october 1869</td> \
+  </tr>\
+  <tr>\
+    <td>death_date</td>\
+    <td>14 february 1955</td> \
+  </tr>\
+  <tr>\
+    <td>party</td>\
+    <td>democratic</td> \
+  </tr>\
+  <tr>\
+    <td>birth_place</td>\
+    <td>frederica , delaware</td> \
+  </tr>\
+  <tr>\
+    <td>profession</td>\
+    <td>lawyer</td> \
+  </tr>\
+  </table>\
+      <p>Summary: albert fawcett polk ( march 11 , 1869 -- february 14 , 1955 ) was a democratic party member of the canadian house of commons .</p>\
+      <p>Number of facts present in table: 4, Number of facts absent from table: 0</p>\
+      <p>There is clearly more information in the summary ("canadian house of commons") that is absent from the table, so number of facts absent from table should be greater than zero. </p>\
+</negative-example>\
+  </crowd-instructions>\
+\
+  \
+</crowd-form>}

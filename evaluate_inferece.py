@@ -3,6 +3,7 @@ from preprocess import join_box, load_dem_map, fuzzy_match_rep
 from tqdm import tqdm
 
 SKIP_FIELDS = ['caption', 'image', 'image_size', 'article_title', '']
+COMPARISONS = ["gold", "gpt", "switch", "ours"]
 
 def parse_file(full_path):
     with open(full_path, "r") as fp:
@@ -24,7 +25,7 @@ def extract_structure_from_sample(sample):
     if len(sample) == 1 and sample[0] == "\n":
         return None
 
-    assert len(sample) == 8
+    assert len(sample) == 2 + 2 * len(COMPARISONS)
 
     # line 0 is box
     infobox = sample[0]
@@ -32,14 +33,17 @@ def extract_structure_from_sample(sample):
     # line 1 is Gold
     assert sample[1] == "Gold: \n"
     gold = sample[2].strip()
-    # line 3 is GPT
-    assert sample[3] == "GPT only: \n"
-    gpt = sample[4].strip()
+    # line 3 is switch
+    assert sample[3] == "Switch: \n"
+    switch = sample[4].strip()
+    # line 5 is GPT
+    assert sample[5] == "GPT only: \n"
+    gpt = sample[6].strip()
     # line 5 is ours
-    assert sample[5] == "Ours: \n"
-    ours = sample[6].strip()
+    assert sample[7] == "Ours: \n"
+    ours = sample[8].strip()
 
-    return {"box": infobox, "gold": gold, "gpt": gpt, "ours": ours}
+    return {"box": infobox, "gold": gold, "gpt": gpt, "ours": ours, "switch": switch}
 
 
 def replace_summary_with_field_pos(box, summary, dem_file):
