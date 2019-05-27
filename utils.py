@@ -6,21 +6,16 @@ from nltk.corpus import stopwords
 import json
 import zipfile
 import string
-import queue
+import Queue
 import random
-# import encoder
+import encoder
 import numpy as np
-# from nlgeval import NLGEval
-# from nlgeval import compute_metrics
+from nlgeval import NLGEval
+from nlgeval import compute_metrics
 from fuzzysearch import find_near_matches
-
-from PythonROUGE import PythonROUGE
-
-import matplotlib
-
-matplotlib.use("agg")
-from matplotlib import pyplot as pl
-
+'''
+some test functions
+'''
 
 
 project_dir = "/scratch/home/zhiyu/wiki2bio/"
@@ -39,1351 +34,1218 @@ cider_in = project_dir + "cider/results-baseline.json"
 
 file_out = project_dir + "data_misc/test_compare_error_cider_1.0_baseline.txt"
 
-# def gen_compare(cider_in, table_in, summary_ours_in, summary_with_unk, summary_gold_in, file_out):
-# 	'''
-# 	gen file for error case compare
-# 	'''
+def gen_compare(cider_in, table_in, summary_ours_in, summary_with_unk, summary_gold_in, file_out):
+    '''
+    gen file for error case compare
+    '''
 
-# 	with open(table_in) as f:
-# 		table = f.readlines()
+    with open(table_in) as f:
+        table = f.readlines()
 
-# 	with open(summary_ours_in) as f:
-# 		res_ours = f.readlines()
+    with open(summary_ours_in) as f:
+        res_ours = f.readlines()
 
-# 	with open(summary_with_unk) as f:
-# 		res_ours_unk = f.readlines()
+    with open(summary_with_unk) as f:
+        res_ours_unk = f.readlines()
 
-# 	with open(summary_gold_in) as f:
-# 		res_gold = f.readlines()
+    with open(summary_gold_in) as f:
+        res_gold = f.readlines()
 
-# 	with open(cider_in) as f:
-# 		res_cider = json.load(f)
-# 		score_cider = res_cider["CIDEr"]
-# 		score_cider_d = res_cider["CIDErD"]
+    with open(cider_in) as f:
+        res_cider = json.load(f)
+        score_cider = res_cider["CIDEr"]
+        score_cider_d = res_cider["CIDErD"]
 
-# 		print (len(score_cider_d))
+        print(len(score_cider_d))
 
-# 	nlgeval = NLGEval()
+    nlgeval = NLGEval()
 
-# 	out = open(file_out, "w")
-# 	i = 0
-# 	num_write = 0
-# 	avg_len_right = 0.0
-# 	avg_len_wrong = 0.0
+    out = open(file_out, "w")
+    i = 0
+    num_write = 0
+    avg_len_right = 0.0
+    avg_len_wrong = 0.0
 
-# 	for this_cider, this_box, this_ours, this_unk, this_gold in zip(score_cider_d, table, res_ours, res_ours_unk, res_gold):
+    for this_cider, this_box, this_ours, this_unk, this_gold in zip(score_cider_d, table, res_ours, res_ours_unk, res_gold):
 
-# 		references = [this_gold.strip().split()]
-# 		hypothesis = this_ours.strip().split()
-# 		this_bleu = sentence_bleu(references, hypothesis)
-# 		this_cider = float(this_cider)
-# 		metrics_dict = nlgeval.compute_individual_metrics([this_gold.strip()], this_ours.strip())
-# 		this_meteor = metrics_dict["meteor"]
+        references = [this_gold.strip().split()]
+        hypothesis = this_ours.strip().split()
+        this_bleu = sentence_bleu(references, hypothesis)
+        this_cider = float(this_cider)
+        metrics_dict = nlgeval.compute_individual_metrics([this_gold.strip()], this_ours.strip())
+        this_meteor = metrics_dict["meteor"]
 
-# 		i += 1
+        i += 1
 
-# 		#if this_bleu < 0.1:
-# 		#if this_bleu > 0.1 and this_bleu < 0.2:
-# 		#if this_bleu > 0.2 and this_bleu < 0.3:
-# 		if this_cider < 1.0:
+        #if this_bleu < 0.1:
+        #if this_bleu > 0.1 and this_bleu < 0.2:
+        #if this_bleu > 0.2 and this_bleu < 0.3:
+        if this_cider < 1.0:
 
-# 			avg_len_wrong += len(this_box.strip().split("\t"))
-# 			num_write += 1
-# 			out.write("########## Test " + str(i) +  " ##########\n")
+            avg_len_wrong += len(this_box.strip().split("\t"))
+            num_write += 1
+            out.write("########## Test " + str(i) +  " ##########\n")
 
-# 			for each_token in this_box.strip().split("\t"):
-# 				out.write(each_token + "\n")
+            for each_token in this_box.strip().split("\t"):
+                out.write(each_token + "\n")
 
-# 			out.write("########## Gold ##########\n")
-# 			out.write(this_gold.strip() + "\n")
-# 			out.write("########## Ours ##########\n")
-# 			out.write(this_ours.strip() + "\n")
-# 			out.write("########## Ours with unk ##########\n")
-# 			out.write(this_unk.strip() + "\n")
-# 			out.write("########## bleu ##########\n")
-# 			out.write(str(this_bleu) + "\n")
-# 			out.write("########## cider-d ##########\n")
-# 			out.write(str(this_cider) + "\n")
-# 			out.write("########## meteor ##########\n")
-# 			out.write(str(this_meteor) + "\n")
-# 			out.write("\n")
+            out.write("########## Gold ##########\n")
+            out.write(this_gold.strip() + "\n")
+            out.write("########## Ours ##########\n")
+            out.write(this_ours.strip() + "\n")
+            out.write("########## Ours with unk ##########\n")
+            out.write(this_unk.strip() + "\n")
+            out.write("########## bleu ##########\n")
+            out.write(str(this_bleu) + "\n")
+            out.write("########## cider-d ##########\n")
+            out.write(str(this_cider) + "\n")
+            out.write("########## meteor ##########\n")
+            out.write(str(this_meteor) + "\n")
+            out.write("\n")
 
-# 		else:
-# 			avg_len_right += len(this_box.strip().split("\t"))
+        else:
+            avg_len_right += len(this_box.strip().split("\t"))
 
 
-# 	out.close()
+    out.close()
 
-# 	print "All: ", i
-# 	print "Write: ", num_write
+    print("All: ", i)
+    print("Write: ", num_write)
 
-# 	print "avg_len_wrong: ", float(avg_len_wrong) / num_write
-# 	print "avg_len_right: ", float(avg_len_right) / (i - num_write)
+    print("avg_len_wrong: ", float(avg_len_wrong) / num_write)
+    print("avg_len_right: ", float(avg_len_right) / (i - num_write))
 
-# def check_field(table_in, field_name):
 
 
-# 	with open(table_in) as f:
-# 		table = f.readlines()
+def check_field(table_in, field_name):
 
-# 	num_all = 0
-# 	num_target = 0
 
-# 	for this_box in table:
+    with open(table_in) as f:
+        table = f.readlines()
 
-# 		num_all += 1
+    num_all = 0
+    num_target = 0
 
-# 		for each_token in this_box.strip().split("\t"):
+    for this_box in table:
 
-# 			if each_token.split(":")[0].split("_")[0] == field_name:
-# 				num_target += 1
-# 				break
+        num_all += 1
 
+        for each_token in this_box.strip().split("\t"):
 
+            if each_token.split(":")[0].split("_")[0] == field_name:
+                num_target += 1
+                break
 
-# 	print "All: ", num_all
-# 	print "Target: ", num_target
-# 	print float(num_target) / num_all
 
-# def gen_cider_input(file_in, file_out):
-# 	'''
-# 	generate json file for cider
-# 	[{"image_id": "2008_006488.jpg", "caption": "Man in a boat fishing."}, 
-# 	'''
 
-# 	with open(file_in) as f:
-# 		res = f.readlines()
+    print("All: ", num_all)
+    print("Target: ", num_target)
+    print(float(num_target) / num_all)
 
-# 	data = []
 
-# 	for ind, this_line in enumerate(res):
-# 		this_data = {}
-# 		this_data["image_id"] = str(ind)
-# 		this_data["caption"] = this_line.strip().decode('utf-8').encode('utf-8')
-# 		data.append(this_data)
+def gen_cider_input(file_in, file_out):
+    '''
+    generate json file for cider
+    [{"image_id": "2008_006488.jpg", "caption": "Man in a boat fishing."},
+    '''
 
-# 	with open(file_out, "w") as f:
-# 		f.write(json.dumps(data))
+    with open(file_in) as f:
+        res = f.readlines()
 
-# 	print ind
+    data = []
 
-# def merge_value_field_vocab(word_vocab_file, field_vocab_file, merge_vocab):
-# 	'''
-# 	merge word vocab with field vocab
-# 	'''
+    for ind, this_line in enumerate(res):
+        this_data = {}
+        this_data["image_id"] = str(ind)
+        this_data["caption"] = this_line.strip().decode('utf-8').encode('utf-8')
+        data.append(this_data)
 
+    with open(file_out, "w") as f:
+        f.write(json.dumps(data))
 
-# 	word_vocab = {}
-# 	field_vocab = {}
+    print(ind)
 
-# 	with open(word_vocab_file) as f:
-# 		for line in f:
-# 			line_list = line.strip().split("\t")
-# 			word_vocab[line_list[0]] = int(line_list[1])
-
-# 	with open(field_vocab_file) as f:
-# 		for line in f:
-# 			line_list = line.strip().split("\t")
-# 			for each_word in line_list[0].split("_"):
-# 				if each_word.strip() != "" and each_word not in word_vocab:
-# 					word_vocab[each_word] = -1
 
 
-# 	with open(merge_vocab, "w") as f:
-# 		for tmp in word_vocab:
-# 			f.write(tmp + "\t" + str(1) + "\n")
+def merge_value_field_vocab(word_vocab_file, field_vocab_file, merge_vocab):
+    '''
+    merge word vocab with field vocab
+    '''
 
-# 	print "All: ", len(word_vocab)
 
-# def add_vocab(origianl_vocab, add_vocab, out_vocab):
-# 	'''
-# 	extend vocab
-# 	'''
+    word_vocab = {}
+    field_vocab = {}
 
-# 	word_vocab = {}
+    with open(word_vocab_file) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+            word_vocab[line_list[0]] = int(line_list[1])
 
-# 	with open(origianl_vocab) as f:
-# 		for line in f:
-# 			line_list = line.strip().split("\t")
-# 			if len(line_list) > 1:
-# 				word_vocab[line_list[0]] = int(line_list[1])
+    with open(field_vocab_file) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+            for each_word in line_list[0].split("_"):
+                if each_word.strip() != "" and each_word not in word_vocab:
+                    word_vocab[each_word] = -1
 
-# 	with open(add_vocab) as f:
-# 		for line in f:
-# 			line_list = line.strip().split("\t")
-# 			if line_list[0] != "" and line_list[0] not in word_vocab:
-# 				word_vocab[line_list[0]] = -1
 
+    with open(merge_vocab, "w") as f:
+        for tmp in word_vocab:
+            f.write(tmp + "\t" + str(1) + "\n")
 
-# 	ind = 0
-# 	with open(out_vocab, "w") as f:
-# 		for tmp in word_vocab:
-# 			f.write(tmp + "\t" + str(ind) + "\n")
-# 			ind += 1
+    print("All: ", len(word_vocab))
 
-# 	print "All: ", len(word_vocab)
 
-# def add_vocab_freq(origianl_vocab, add_vocab, out_vocab):
-# 	'''
-# 	extend vocab. exclude numbers
-# 	'''
+def add_vocab(origianl_vocab, add_vocab, out_vocab):
+    '''
+    extend vocab
+    '''
 
-# 	word_vocab = {}
+    word_vocab = {}
 
-# 	with open(origianl_vocab) as f:
-# 		for line in f:
-# 			line_list = line.strip().split("\t")
-# 			word = line_list[0]
-# 			if not word.isdigit():
-# 				if len(line_list) > 1:
-# 					word_vocab[word] = int(line_list[1])
+    with open(origianl_vocab) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+            if len(line_list) > 1:
+                word_vocab[line_list[0]] = int(line_list[1])
 
-# 	with open(add_vocab) as f:
-# 		for line in f:
-# 			line_list = line.strip().split("\t")
-# 			word = line_list[0]
-# 			if not word.isdigit():
-# 				if line_list[0] != "" and line_list[0] not in word_vocab:
-# 					word_vocab[line_list[0]] = -1
-
-
-# 	ind = 0
-# 	with open(out_vocab, "w") as f:
-# 		for tmp in word_vocab:
-# 			f.write(tmp + "\t" + str(ind) + "\n")
-# 			ind += 1
-
-# 	print "All: ", len(word_vocab)
-
-# def create_ori_vocab(in_box, in_summary, word_vocab_file, field_vocab_file, size):
-# 	'''
-# 	create original vocab for each domain
-# 	field: 2000
-# 	word: 20000
-# 	'''
+    with open(add_vocab) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+            if line_list[0] != "" and line_list[0] not in word_vocab:
+                word_vocab[line_list[0]] = -1
 
-# 	word_vocab = {}
-# 	field_vocab = {}
-
-# 	with open(in_box) as f:
-# 		for line in f:
-# 			for each_item in line.strip("\n").split("\t"):
-
-# 				this_field_name = "_".join(each_item.split(":")[0].split("_")[:-1])
-# 				if this_field_name not in field_vocab:
-# 					field_vocab[this_field_name] = 0
-# 				field_vocab[this_field_name] += 1
 
-# 				this_value_token = each_item.split(":")[1]
-# 				if this_value_token.isdigit():
-# 					continue
-# 				if this_value_token not in word_vocab:
-# 					word_vocab[this_value_token] = 0
-# 				word_vocab[this_value_token] += 1
+    ind = 0
+    with open(out_vocab, "w") as f:
+        for tmp in word_vocab:
+            f.write(tmp + "\t" + str(ind) + "\n")
+            ind += 1
 
+    print("All: ", len(word_vocab))
 
 
-# 	with open(in_summary) as f:
-# 		for line in f:
-# 			for token in line.strip().split(" "):
-# 				if token.isdigit():
-# 					continue
-# 				if token not in word_vocab:
-# 					word_vocab[token] = 0
-# 				word_vocab[token] += 1
-
-
-# 	sorted_word = sorted(word_vocab.items(), key=operator.itemgetter(1), reverse=True)
-# 	sorted_field = sorted(field_vocab.items(), key=operator.itemgetter(1), reverse=True)
+def add_vocab_freq(origianl_vocab, add_vocab, out_vocab):
+    '''
+    extend vocab. exclude numbers
+    '''
 
-# 	print "All words: ", len(sorted_word)
-# 	print "All fields: ", len(sorted_field)
+    word_vocab = {}
 
-# 	sorted_word = sorted_word[0:size]
-
-
-# 	with open(word_vocab_file, "w") as f:
-# 		for item in sorted_word:
-# 			f.write(item[0] + "\t" + str(item[1]) + "\n")
-
-# 	with open(field_vocab_file, "w") as f:
-# 		for item in sorted_field:
-# 			f.write(item[0] + "\t" + str(item[1]) + "\n")
-
-# def extract_glove_vocab(file_in, file_out):
-# 	'''
-# 	extract vocab from glove embedding
-# 	'''
-
-# 	ind = 0
-# 	f_out = open(file_out, "w")
-# 	with open(file_in) as f:
-# 		for line in f:
-# 			line_list = line.strip().split()
-# 			assert len(line_list) == 301
-
-# 			f_out.write(line_list[0] + "\t" + str(ind) + "\n")
-# 			ind += 1
-
-# 	f_out.close()
-# 	print ind
-
-# def read_word2vec_zip(word2vec_file):
-#     wordvec_map = {}
-#     num_words = 0
-#     dimension = 0
-#     zfile = zipfile.ZipFile(word2vec_file)
-#     for finfo in zfile.infolist():
-#         ifile = zfile.open(finfo)
-#         for line in ifile:
-#             line = line.strip()
-#             #print line
-#             entries = line.split(' ')
-#             if len(entries) == 2:
-#                 continue
-#             word = entries[0].strip()
-#             vec = map(float, entries[1:])
-
-#             if word in wordvec_map:
-#                 print ("Invalid word in embedding. Does not matter.")
-#                 continue
-#             assert dimension == 0 or dimension == len(vec)
-
-#             wordvec_map[word] = np.array(vec)
-#             num_words += 1
-#             dimension = len(vec)
-
-#     return wordvec_map, num_words, dimension
-
-# def check_glove_coverage(glove_in, field_in):
-
-# 	word2vec_map, _, _ = read_word2vec_zip(glove_in)
-
-# 	word_vocab = {}
-# 	with open(field_in) as f:
-# 		for line in f:
-# 			line_list = line.strip().split("\t")
-# 			for each_word in line_list[0].split("_"):
-# 				if each_word.strip() != "" and each_word not in word_vocab:
-# 					word_vocab[each_word] = -1
-
-# 	covered = 0
-# 	for word in word_vocab:
-# 		if word in word2vec_map:
-# 			covered += 1
-
-
-# 	print float(covered) / len(word_vocab)
-
-# def load_vocab(vocab_file):
-# 	vocab = {}
-
-# 	vocab['<_PAD>'] = 0
-# 	vocab['<_START_TOKEN>'] = 1
-# 	vocab['<_END_TOKEN>'] = 2
-# 	vocab['<_UNK_TOKEN>'] = 3
-
-# 	cnt = 4
-# 	with open(vocab_file, "r") as v:
-# 		for line in v:
-# 			if len(line.strip().split()) > 1:
-# 				word = line.strip().split()[0]
-# 				ori_id = int(line.strip().split()[1])
-# 				if word not in vocab:
-# 					vocab[word] = (cnt + ori_id)
-
-# 	return vocab
-
-# def load_local_vocab(vocab_file):
-# 	vocab = {}
-
-# 	cnt = 0
-# 	with open(vocab_file, "r") as v:
-# 		for line in v:
-# 			if len(line.strip().split()) > 1:
-# 				word = line.strip().split()[0]
-# 				ori_id = int(line.strip().split()[1])
-# 				if word not in vocab:
-# 					vocab[word] = (cnt + ori_id)
-
-# 	return vocab
-
-# def check_in_vocab(check_vocab, word_to_check):
-# 	'''
-# 	check if a word in glove vocab
-# 	'''
-
-# 	vocab = load_vocab(check_vocab)
-
-# 	if word_to_check in vocab:
-# 		print "Yes"
-# 	else:
-# 		print "No"
-
-# def process_songs(file_in, file_out):
-# 	'''
-# 	extra process remove ""
-# 	`` 365 nichi kazoku '' is a single release by the japanese boyband kanjani8 .
-# 	'''
-# 	f_out = open(file_out, "w")
-# 	with open(file_in) as f:
-# 		for line in f:
-# 			summary = line.strip()
-# 			if summary[0] == "`":
-# 				summary = summary[3:]
-# 				sum_list = summary.split("''")
-# 				if len(sum_list) > 1:
-# 					summary = sum_list[0].strip() + "''".join(sum_list[1:])
-
-# 			f_out.write(summary + "\n")
-
-# 	f_out.close()
-
-# def join_box(list_in):
-# 	'''
-# 	join original format values
-# 	'''
-
-# 	out_list = []
-# 	current_name = ""
-# 	current_value = ""
-# 	# print "\n"
-# 	# print list_in
-
-# 	for each_item in list_in:
-# 		field_name = each_item.split(":")[0]
-# 		field_value = each_item.split(":")[1]
-
-# 		if field_name == "":
-# 			continue
-
-# 		if not field_name[-1].isdigit():
-# 			if field_value != "<none>":
-# 				out_list.append((field_name, field_value))
-# 			continue
-
-# 		field_name = "_".join(field_name.split("_")[:-1])
-
-# 		if field_name != current_name:
-# 			if current_name != "":
-# 				cur_name_list = [tup[0] for tup in out_list]
-# 				# print out_list
-# 				# print field_name
-# 				# assert field_name not in cur_name_list
-
-# 				### remove none value
-# 				if current_value.strip() != "<none>":
-# 					out_list.append((current_name, current_value.strip()))
-# 				current_name = ""
-# 				current_value = ""
-
-# 		current_name = field_name
-# 		current_value += (field_value + " ")
-
-
-# 	if current_value.strip() != "<none>":
-# 		out_list.append((current_name, current_value.strip()))
-
-# 	sorted_by_second = sorted(out_list, key=lambda tup: len(tup[1].split(" ")), reverse=True)
-
-# 	random_out = random.shuffle(sorted_by_second)
-
-# 	return out_list, sorted_by_second
-
-# def load_dem_map(file_in):
-# 	'''
-# 	recursively load nationality map
-# 	'''
-# 	dem_map = {}
-# 	with open(file_in) as f:
-# 		for line in f:
-# 			line_list = line.strip().lower().split(",")
-# 			if line_list[0] not in dem_map:
-# 				dem_map[line_list[0]] = []
-# 			if line_list[1] not in dem_map[line_list[0]]:
-# 				dem_map[line_list[0]].append(line_list[1])
-
-# 			if line_list[1] not in dem_map:
-# 				dem_map[line_list[1]] = []
-# 			if line_list[0] not in dem_map[line_list[1]]:
-# 				dem_map[line_list[1]].append(line_list[0])
-
-# 	final_res_map = {}
-# 	for each_con in dem_map:
-# 		res_con = []
-# 		q = Queue.Queue()
-# 		q.put(each_con)
-
-# 		while not q.empty():
-# 			con = q.get()
-# 			if con in res_con:
-# 				continue
-
-# 			res_con.append(con)
-# 			if con in dem_map:
-# 				for each_sub in dem_map[con]:
-# 					q.put(each_sub)
-
-# 		final_res_map[each_con] = res_con
-
-# 	return final_res_map
-
-# def fuzzy_match(source, substring, field_name):
-
-# 	this_value = substring
-# 	out_summary = source
-
-# 	this_value_list_raw = this_value.split(" ")
-# 	out_summary_list = out_summary.split(" ")
-# 	# print this_value_list
-# 	# print out_summary_list
-
-# 	this_value_list = []
-# 	for token in this_value_list_raw:
-# 		if not(token in string.punctuation) \
-# 			and token != "-lrb-" \
-# 			and token != "-rrb-" \
-# 			and token != "-lsb-" \
-# 			and token != "-rsb-":
-# 			this_value_list.append(token)
-
-# 	if len(this_value_list) == 0:
-# 		return out_summary
-
-# 	num_consist = 0
-# 	min_index = len(out_summary_list) + 1
-# 	max_index = -1
-
-# 	for token in this_value_list:
-# 		if token in out_summary_list:
-# 			num_consist += 1
-# 			this_ind = out_summary_list.index(token)
-# 			if this_ind < min_index:
-# 				min_index = this_ind
-# 			if this_ind > max_index:
-# 				max_index = this_ind
-
-# 	# print num_consist
-# 	# print min_index
-# 	# print max_index
-
-
-# 	if float(num_consist) / len(this_value_list) > 0.4:
-# 		if max_index - min_index <= 2 * len(this_value_list):
-# 			### regard as match
-# 			to_replace = " ".join(out_summary_list[min_index:max_index+1])
-# 			if out_summary.startswith(to_replace):
-# 				out_summary = out_summary.replace(to_replace + " ", "<" + field_name + "> ")
-# 			else:
-# 				out_summary = out_summary.replace(" " + to_replace + " ", " <" + field_name + "> ")
-
-# 	return out_summary
-
-# def fuzzy_match_rep(source, substring, field_name):
-
-# 	this_value = substring
-# 	out_summary = source
-
-# 	this_value_list_raw = this_value.split(" ")
-# 	out_summary_list = out_summary.split(" ")
-# 	# print this_value_list
-# 	# print out_summary_list
-
-# 	this_value_list = []
-# 	for token in this_value_list_raw:
-# 		if not(token in string.punctuation) \
-# 			and token != "-lrb-" \
-# 			and token != "-rrb-" \
-# 			and token != "-lsb-" \
-# 			and token != "-rsb-":
-# 			this_value_list.append(token)
-
-# 	if len(this_value_list) == 0:
-# 		return out_summary
-
-# 	num_consist = 0
-# 	min_index = len(out_summary_list) + 1
-# 	max_index = -1
-
-# 	for token in this_value_list:
-# 		if token in out_summary_list:
-# 			num_consist += 1
-# 			this_ind = out_summary_list.index(token)
-# 			if this_ind < min_index:
-# 				min_index = this_ind
-# 			if this_ind > max_index:
-# 				max_index = this_ind
-
-# 	# print num_consist
-# 	# print min_index
-# 	# print max_index
-
-
-# 	if float(num_consist) / len(this_value_list) > 0.4:
-# 		if max_index - min_index <= 2 * len(this_value_list):
-# 			### regard as match
-# 			to_replace = " ".join(out_summary_list[min_index:max_index+1])
-# 			replace_len = len(to_replace.split(" "))
-# 			if out_summary.startswith(to_replace):
-# 				out_summary = out_summary.replace(to_replace + " ", ("<" + field_name + "> ") * replace_len)
-# 			else:
-# 				out_summary = out_summary.replace(" " + to_replace + " ", " " + ("<" + field_name + "> ") * replace_len)
-
-# 	return out_summary
-
-# def gen_mask(in_summary, in_box, out_summary, out_box, out_join):
-# 	'''
-# 	replace special token with unk
-# 	'''
-
-# 	### load nationality demonyms.csv
-# 	dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
-
-
-# 	with open(in_box) as f:
-# 		lines_box = f.readlines()
-
-# 	with open(in_summary) as f:
-# 		lines_summary = f.readlines()
-
-# 	out_s = open(out_summary, "w")
-# 	out_b = open(out_box, "w")
-# 	out_t = open(out_join, "w")
-
-# 	for box, summary in zip (lines_box, lines_summary):
+    with open(origianl_vocab) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+            word = line_list[0]
+            if not word.isdigit():
+                if len(line_list) > 1:
+                    word_vocab[word] = int(line_list[1])
 
-# 		box_list = box.strip().split("\t")
-# 		box_out_list, box_field_list = join_box(box_list)
+    with open(add_vocab) as f:
+        for line in f:
+            line_list = line.strip().split("\t")
+            word = line_list[0]
+            if not word.isdigit():
+                if line_list[0] != "" and line_list[0] not in word_vocab:
+                    word_vocab[line_list[0]] = -1
 
-# 		out_summary = summary.strip()
 
-# 		for (this_name, this_value) in box_field_list:
+    ind = 0
+    with open(out_vocab, "w") as f:
+        for tmp in word_vocab:
+            f.write(tmp + "\t" + str(ind) + "\n")
+            ind += 1
 
+    print("All: ", len(word_vocab))
 
-# 			if " " + this_value + " " in out_summary:
 
-# 				out_summary = out_summary.replace(" " + this_value + " ", " <" + this_name + "> ")
 
-# 			### name
-# 			elif out_summary.startswith(this_value):
-# 				out_summary = out_summary.replace(this_value, "<" + this_name + ">")
 
-# 			### nationality
-# 			elif this_value in dem_map:
-# 				this_value_list = dem_map[this_value]
-# 				for this_value in this_value_list:
-# 					if " " + this_value + " " in out_summary:
+def create_ori_vocab(in_box, in_summary, word_vocab_file, field_vocab_file, size):
+    '''
+    create original vocab for each domain
+    field: 2000
+    word: 20000
+    '''
 
-# 						out_summary = out_summary.replace(" " + this_value + " ", " <" + this_name + "> ")
+    word_vocab = {}
+    field_vocab = {}
 
+    with open(in_box) as f:
+        for line in f:
+            for each_item in line.strip("\n").split("\t"):
 
-# 			else:
+                this_field_name = "_".join(each_item.split(":")[0].split("_")[:-1])
+                if this_field_name not in field_vocab:
+                    field_vocab[this_field_name] = 0
+                field_vocab[this_field_name] += 1
 
-# 				## seperate nationality
-# 				is_dem_match = 0
-# 				this_value_list = this_value.split(" , ")
-# 				if len(this_value_list) > 1:
-# 					for each_con in this_value_list:
-# 						if " " + each_con + " " in out_summary and each_con in dem_map:
-# 							out_summary = out_summary.replace(" " + each_con + " ", " <" + this_name + "> ")
-# 							is_dem_match = 1
-# 							break
-# 						if each_con in dem_map:
-# 							this_con_list = dem_map[each_con]
-# 							for this_con in this_con_list:
-# 								if " " + this_con + " " in out_summary:
-# 									out_summary = out_summary.replace(" " + this_con + " ", " <" + this_name + "> ")
-# 									is_dem_match = 1
-# 									break
+                this_value_token = each_item.split(":")[1]
+                if this_value_token.isdigit():
+                    continue
+                if this_value_token not in word_vocab:
+                    word_vocab[this_value_token] = 0
+                word_vocab[this_value_token] += 1
 
-# 				if is_dem_match:
-# 					continue
 
-# 				### fuzzy match 
-# 				# match threshold? len percent? start - end index offset
-# 				out_summary = fuzzy_match(out_summary, this_value, this_name)
 
+    with open(in_summary) as f:
+        for line in f:
+            for token in line.strip().split(" "):
+                if token.isdigit():
+                    continue
+                if token not in word_vocab:
+                    word_vocab[token] = 0
+                word_vocab[token] += 1
 
 
-# 		print box_list
-# 		print box_field_list
-# 		print out_summary
-# 		print summary
-# 		print "\n"
+    sorted_word = sorted(word_vocab.items(), key=operator.itemgetter(1), reverse=True)
+    sorted_field = sorted(field_vocab.items(), key=operator.itemgetter(1), reverse=True)
 
-# 		out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
-# 		out_s.write(out_summary + "\n")
+    print("All words: ", len(sorted_word))
+    print("All fields: ", len(sorted_field))
 
-# 		out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
-# 		out_t.write(summary.strip() + "\n")
-# 		out_t.write(out_summary + "\n")
-# 		out_t.write("\n")
+    sorted_word = sorted_word[0:size]
 
 
+    with open(word_vocab_file, "w") as f:
+        for item in sorted_word:
+            f.write(item[0] + "\t" + str(item[1]) + "\n")
 
-# 	out_s.close()
-# 	out_b.close()
-# 	out_t.close()
+    with open(field_vocab_file, "w") as f:
+        for item in sorted_field:
+            f.write(item[0] + "\t" + str(item[1]) + "\n")
 
-# def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos, processed_summary, out_test):
-# 	'''
-# 	replace special token with unk
-# 	'''
 
-# 	### load nationality demonyms.csv
-# 	dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
+def extract_glove_vocab(file_in, file_out):
+    '''
+    extract vocab from glove embedding
+    '''
 
-# 	data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
-# 	sw = stopwords.words("english")
-# 	freq_vocab = load_local_vocab(data_path + "human_books_songs_films_word_vocab_500.txt")
+    ind = 0
+    f_out = open(file_out, "w")
+    with open(file_in) as f:
+        for line in f:
+            line_list = line.strip().split()
+            assert len(line_list) == 301
 
+            f_out.write(line_list[0] + "\t" + str(ind) + "\n")
+            ind += 1
 
-# 	with open(in_box) as f:
-# 		lines_box = f.readlines()
+    f_out.close()
+    print(ind)
 
-# 	with open(in_summary) as f:
-# 		lines_summary = f.readlines()
+def read_word2vec_zip(word2vec_file):
+    wordvec_map = {}
+    num_words = 0
+    dimension = 0
+    zfile = zipfile.ZipFile(word2vec_file)
+    for finfo in zfile.infolist():
+        ifile = zfile.open(finfo)
+        for line in ifile:
+            line = line.strip()
+            #print line
+            entries = line.split(' ')
+            if len(entries) == 2:
+                continue
+            word = entries[0].strip()
+            vec = map(float, entries[1:])
 
-# 	with open(processed_summary) as f:
-# 		lines_pro_summary = f.readlines()
+            if word in wordvec_map:
+                print ("Invalid word in embedding. Does not matter.")
+                continue
+            assert dimension == 0 or dimension == len(vec)
 
-# 	out_s = open(out_field, "w")
-# 	out_p = open(out_pos, "w")
-# 	out_rp = open(out_rpos, "w")
+            wordvec_map[word] = np.array(vec)
+            num_words += 1
+            dimension = len(vec)
 
-# 	out_t = open(out_test, "w")
+    return wordvec_map, num_words, dimension
 
-# 	for box, summary, pro_summary in zip (lines_box, lines_summary, lines_pro_summary):
 
-# 		box_list = box.strip().split("\t")
-# 		box_out_list, box_field_list = join_box(box_list)
 
-# 		tem_summary = summary.strip()
-# 		out_summary = summary.strip()
-# 		tem_summary_list = tem_summary.split(" ")
+    print(float(covered) / len(word_vocab))
 
-# 		out_field = np.zeros_like(out_summary.split(" ")).tolist()
-# 		for ind in range(len(out_field)):
-# 			out_field[ind] = '<_PAD>'
+def load_vocab(vocab_file):
+    vocab = {}
 
-# 		out_pos, out_rpos = [], []
+    vocab['<_PAD>'] = 0
+    vocab['<_START_TOKEN>'] = 1
+    vocab['<_END_TOKEN>'] = 2
+    vocab['<_UNK_TOKEN>'] = 3
 
-# 		for ind in range(len(out_field)):
-# 			out_pos.append(0)
-# 			out_rpos.append(0)
+    cnt = 4
+    with open(vocab_file, "r") as v:
+        for line in v:
+            if len(line.strip().split()) > 1:
+                word = line.strip().split()[0]
+                ori_id = int(line.strip().split()[1])
+                if word not in vocab:
+                    vocab[word] = (cnt + ori_id)
 
-# 		for (this_name, this_value) in box_field_list:
+    return vocab
 
-# 			this_value_dict = {}
-# 			for ind, each_token in enumerate(this_value.split(" ")):
-# 				if each_token not in this_value_dict:
-# 					this_value_dict[each_token] = ind + 1
+def load_local_vocab(vocab_file):
+    vocab = {}
 
-# 			this_value_list_len = len(this_value.split(" "))
+    cnt = 0
+    with open(vocab_file, "r") as v:
+        for line in v:
+            if len(line.strip().split()) > 1:
+                word = line.strip().split()[0]
+                ori_id = int(line.strip().split()[1])
+                if word not in vocab:
+                    vocab[word] = (cnt + ori_id)
 
-# 			if " " + this_value + " " in out_summary:
+    return vocab
 
-# 				out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
+def check_in_vocab(check_vocab, word_to_check):
+    '''
+    check if a word in glove vocab
+    '''
 
+    vocab = load_vocab(check_vocab)
 
+    if word_to_check in vocab:
+        print("Yes")
+    else:
+        print("No")
 
-# 			### name
-# 			elif out_summary.startswith(this_value + " "):
-# 				out_summary = out_summary.replace(this_value + " ", ("<" + this_name + "> ") * this_value_list_len)
 
-# 			### nationality
-# 			elif this_value in dem_map:
-# 				this_value_list = dem_map[this_value]
-# 				for this_value in this_value_list:
-# 					this_value_list_len = len(this_value.split(" "))
-# 					if " " + this_value + " " in out_summary:
+def process_songs(file_in, file_out):
+    '''
+    extra process remove ""
+    `` 365 nichi kazoku '' is a single release by the japanese boyband kanjani8 .
+    '''
+    f_out = open(file_out, "w")
+    with open(file_in) as f:
+        for line in f:
+            summary = line.strip()
+            if summary[0] == "`":
+                summary = summary[3:]
+                sum_list = summary.split("''")
+                if len(sum_list) > 1:
+                    summary = sum_list[0].strip() + "''".join(sum_list[1:])
 
-# 						out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
+            f_out.write(summary + "\n")
 
+    f_out.close()
 
-# 			else:
 
-# 				## seperate nationality
-# 				is_dem_match = 0
-# 				this_value_list = this_value.split(" , ")
-# 				if len(this_value_list) > 1:
-# 					for each_con in this_value_list:
-# 						if " " + each_con + " " in out_summary and each_con in dem_map:
-# 							each_con_len = len(each_con.split(" "))
-# 							out_summary = out_summary.replace(" " + each_con + " ", " " + ("<" + this_name + "> ") * each_con_len)
-# 							is_dem_match = 1
-# 							break
-# 						if each_con in dem_map:
-# 							this_con_list = dem_map[each_con]
-# 							for this_con in this_con_list:
-# 								if " " + this_con + " " in out_summary:
-# 									this_con_len = len(this_con.split(" "))
-# 									out_summary = out_summary.replace(" " + this_con + " ", " " + ("<" + this_name + "> ") * this_con_len)
-# 									is_dem_match = 1
-# 									break
+def join_box(list_in):
+    '''
+    join original format values
+    '''
 
-# 				if is_dem_match:
-# 					continue
+    out_list = []
+    current_name = ""
+    current_value = ""
+    # print "\n"
+    # print list_in
 
-# 				### fuzzy match 
-# 				# match threshold? len percent? start - end index offset
-# 				out_summary = fuzzy_match_rep(out_summary, this_value, this_name)
+    for each_item in list_in:
+        field_name = each_item.split(":")[0]
+        field_value = each_item.split(":")[1]
 
-# 			assert len(out_summary.split(" ")) == len(tem_summary_list)
+        if field_name == "":
+            continue
 
-# 			for ind, token in enumerate(out_summary.split(" ")):
-# 				if token == "<" + this_name + ">":
-# 					out_field[ind] = this_name
-# 					ori_token = tem_summary_list[ind]
-# 					if ori_token in this_value_dict:
-# 						out_pos[ind] = this_value_dict[ori_token]
-# 						out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+        if not field_name[-1].isdigit():
+            if field_value != "<none>":
+                out_list.append((field_name, field_value))
+            continue
 
-# 		# print box_list
-# 		# print out_summary
-# 		# print summary.strip()
-# 		# print out_field
-# 		# print out_pos
-# 		# print out_rpos
-# 		# print "\n"
+        field_name = "_".join(field_name.split("_")[:-1])
 
-# 		### second fuzzy match. by individual word
-# 		for (this_name, this_value) in box_field_list:
+        if field_name != current_name:
+            if current_name != "":
+                cur_name_list = [tup[0] for tup in out_list]
+                # print out_list
+                # print field_name
+                # assert field_name not in cur_name_list
 
-# 			this_value_dict = {}
-# 			for ind, each_token in enumerate(this_value.split(" ")):
-# 				if each_token not in this_value_dict:
-# 					this_value_dict[each_token] = ind + 1
+                ### remove none value
+                if current_value.strip() != "<none>":
+                    out_list.append((current_name, current_value.strip()))
+                current_name = ""
+                current_value = ""
 
-# 			this_value_list_len = len(this_value.split(" "))
-# 			this_value_list = this_value.split(" ")
+        current_name = field_name
+        current_value += (field_value + " ")
 
-# 			for ind, each_token in enumerate(out_summary.split(" ")):
-# 				if (each_token not in sw) and each_token not in string.punctuation:
-# 					if each_token in this_value_dict:
-# 						out_summary.replace(" " + each_token + " ", " <" + this_name + "> ")
 
-# 						out_field[ind] = this_name
-# 						out_pos[ind] = this_value_dict[each_token]
-# 						out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+    if current_value.strip() != "<none>":
+        out_list.append((current_name, current_value.strip()))
 
+    sorted_by_second = sorted(out_list, key=lambda tup: len(tup[1].split(" ")), reverse=True)
 
-# 		assert len(out_summary.split(" ")) == len(tem_summary_list)
+    random_out = random.shuffle(sorted_by_second)
 
+    return out_list, sorted_by_second
 
 
+def load_dem_map(file_in):
+    '''
+    recursively load nationality map
+    '''
+    dem_map = {}
+    with open(file_in) as f:
+        for line in f:
+            line_list = line.strip().lower().split(",")
+            if line_list[0] not in dem_map:
+                dem_map[line_list[0]] = []
+            if line_list[1] not in dem_map[line_list[0]]:
+                dem_map[line_list[0]].append(line_list[1])
 
+            if line_list[1] not in dem_map:
+                dem_map[line_list[1]] = []
+            if line_list[0] not in dem_map[line_list[1]]:
+                dem_map[line_list[1]].append(line_list[0])
 
-# 		print box_list
-# 		print out_summary
-# 		print summary.strip()
-# 		print out_field
-# 		print out_pos
-# 		print out_rpos
-# 		print "\n"
+    final_res_map = {}
+    for each_con in dem_map:
+        res_con = []
+        q = Queue.Queue()
+        q.put(each_con)
 
-# 		# out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
-# 		# out_s.write(out_summary + "\n")
+        while not q.empty():
+            con = q.get()
+            if con in res_con:
+                continue
 
-# 		out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
-# 		out_t.write("\n")
-# 		out_t.write(summary.strip() + "\n")
-# 		out_t.write("\n")
-# 		out_t.write(out_summary + "\n")
-# 		out_t.write("\n")
-# 		out_t.write(pro_summary)
-# 		out_t.write("\n")
+            res_con.append(con)
+            if con in dem_map:
+                for each_sub in dem_map[con]:
+                    q.put(each_sub)
 
-# 		out_t.write("#########################\n")
+        final_res_map[each_con] = res_con
 
-# 		# print out_field
-# 		# print len(out_field)
-# 		# print tem_summary
-# 		# print len(tem_summary_list)
+    return final_res_map
 
-# 		assert len(out_field) == len(tem_summary_list)
-# 		assert len(tem_summary_list) == len(out_pos)
-# 		assert len(tem_summary_list) == len(out_rpos)
 
-# 		# for field_tmp, pos_tmp, rpos_tmp in zip(out_field, out_pos, out_rpos):
-# 		# 	if field_tmp == "<_PAD>":
-# 		# 		if pos_tmp != 0:
-# 		# 			print box_list
-# 		# 			print out_summary
-# 		# 			print summary.strip()
-# 		# 			print out_field
-# 		# 			print out_pos
-# 		# 			print out_rpos
-# 		# 			print "\n"
+def fuzzy_match(source, substring, field_name):
 
+    this_value = substring
+    out_summary = source
 
-# 		out_s.write(" ".join(out_field) + "\n")
-# 		out_p.write(" ".join([str(tmp) for tmp in out_pos]) + "\n")
-# 		out_rp.write(" ".join([str(tmp) for tmp in out_rpos]) + "\n")
+    this_value_list_raw = this_value.split(" ")
+    out_summary_list = out_summary.split(" ")
+    # print this_value_list
+    # print out_summary_list
 
+    this_value_list = []
+    for token in this_value_list_raw:
+        if not(token in string.punctuation) \
+            and token != "-lrb-" \
+            and token != "-rrb-" \
+            and token != "-lsb-" \
+            and token != "-rsb-":
+            this_value_list.append(token)
 
+    if len(this_value_list) == 0:
+        return out_summary
 
+    num_consist = 0
+    min_index = len(out_summary_list) + 1
+    max_index = -1
 
-# 	out_s.close()
-# 	out_p.close()
-# 	out_rp.close()
+    for token in this_value_list:
+        if token in out_summary_list:
+            num_consist += 1
+            this_ind = out_summary_list.index(token)
+            if this_ind < min_index:
+                min_index = this_ind
+            if this_ind > max_index:
+                max_index = this_ind
 
-# def dec_checker(summary_in, dec_in):
+    # print num_consist
+    # print min_index
+    # print max_index
 
-# 	with open(summary_in) as f_s:
-# 		lines_s = f_s.readlines()
 
-# 	with open(dec_in) as f_d:
-# 		line_d = f_d.readlines()
+    if float(num_consist) / len(this_value_list) > 0.4:
+        if max_index - min_index <= 2 * len(this_value_list):
+            ### regard as match
+            to_replace = " ".join(out_summary_list[min_index:max_index+1])
+            if out_summary.startswith(to_replace):
+                out_summary = out_summary.replace(to_replace + " ", "<" + field_name + "> ")
+            else:
+                out_summary = out_summary.replace(" " + to_replace + " ", " <" + field_name + "> ")
 
+    return out_summary
 
-# 	ind = 0
-# 	for summary, dec in zip(lines_s, line_d):
-# 		len_sum = len(summary.strip().split())
-# 		len_dec = len(dec.strip().split())
-# 		ind += 1
+def fuzzy_match_rep(source, substring, field_name):
 
+    this_value = substring
+    out_summary = source
 
-# 		if len_sum != len_dec:
-# 			print str(len_sum) + "\t" + str(len_dec) + "\n"
+    this_value_list_raw = this_value.split(" ")
+    out_summary_list = out_summary.split(" ")
+    # print this_value_list
+    # print out_summary_list
 
-# def get_line_oov(file_in, file_out):
-# 	'''
-# 	utilitys.
-# 	get number of lines with 3
-# 	'''
+    this_value_list = []
+    for token in this_value_list_raw:
+        if not(token in string.punctuation) \
+            and token != "-lrb-" \
+            and token != "-rrb-" \
+            and token != "-lsb-" \
+            and token != "-rsb-":
+            this_value_list.append(token)
 
-# 	with open(file_in) as f:
-# 		lines = f.readlines()
+    if len(this_value_list) == 0:
+        return out_summary
 
-# 	without_3 = []
+    num_consist = 0
+    min_index = len(out_summary_list) + 1
+    max_index = -1
 
-# 	for ind, line in enumerate(lines):
+    for token in this_value_list:
+        if token in out_summary_list:
+            num_consist += 1
+            this_ind = out_summary_list.index(token)
+            if this_ind < min_index:
+                min_index = this_ind
+            if this_ind > max_index:
+                max_index = this_ind
 
-# 		# if "3" in line.strip().split():
-# 		if "3" not in line.strip().split():
-# 			without_3.append(ind)
+    # print num_consist
+    # print min_index
+    # print max_index
 
 
-# 	with open(file_out, "w") as f:
-# 		f.write("\n".join([str(tmp) for tmp in without_3]))
+    if float(num_consist) / len(this_value_list) > 0.4:
+        if max_index - min_index <= 2 * len(this_value_list):
+            ### regard as match
+            to_replace = " ".join(out_summary_list[min_index:max_index+1])
+            replace_len = len(to_replace.split(" "))
+            if out_summary.startswith(to_replace):
+                out_summary = out_summary.replace(to_replace + " ", ("<" + field_name + "> ") * replace_len)
+            else:
+                out_summary = out_summary.replace(" " + to_replace + " ", " " + ("<" + field_name + "> ") * replace_len)
 
-# 	print len(without_3)
+    return out_summary
 
-# def remove_oov(folder_in, folder_out, valid_line_in):
+def gen_mask(in_summary, in_box, out_summary, out_box, out_join):
+    '''
+    replace special token with unk
+    '''
 
+    ### load nationality demonyms.csv
+    dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
 
-# 	with open(valid_line_in) as f:
-# 		valid_line = [int(tmp.strip()) for tmp in f.readlines()]
 
-# 	print len(valid_line)
-# 	print "\n"
+    with open(in_box) as f:
+        lines_box = f.readlines()
 
+    with open(in_summary) as f:
+        lines_summary = f.readlines()
 
-# 	for dirpath, dirnames, filenames in os.walk(folder_in):
-# 		for filename in filenames:
+    out_s = open(out_summary, "w")
+    out_b = open(out_box, "w")
+    out_t = open(out_join, "w")
 
-# 			out_lines = []
+    for box, summary in zip (lines_box, lines_summary):
 
-# 			with open(folder_in + filename) as f:
-# 				lines = [line.strip() for line in f.readlines()]
+        box_list = box.strip().split("\t")
+        box_out_list, box_field_list = join_box(box_list)
 
+        out_summary = summary.strip()
 
-# 			for valid_ind in valid_line:
-# 				out_lines.append(lines[valid_ind])
+        for (this_name, this_value) in box_field_list:
 
-# 			print len(out_lines)
 
-# 			with open(folder_out + filename, "w") as f_out:
-# 				f_out.write("\n".join(out_lines))
+            if " " + this_value + " " in out_summary:
 
-# def remove_oov_files(folder_in, folder_out, valid_line_in, filenames):
+                out_summary = out_summary.replace(" " + this_value + " ", " <" + this_name + "> ")
 
+            ### name
+            elif out_summary.startswith(this_value):
+                out_summary = out_summary.replace(this_value, "<" + this_name + ">")
 
-# 	with open(valid_line_in) as f:
-# 		valid_line = [int(tmp.strip()) for tmp in f.readlines()]
+            ### nationality
+            elif this_value in dem_map:
+                this_value_list = dem_map[this_value]
+                for this_value in this_value_list:
+                    if " " + this_value + " " in out_summary:
 
-# 	print len(valid_line)
-# 	print "\n"
+                        out_summary = out_summary.replace(" " + this_value + " ", " <" + this_name + "> ")
 
 
-# 	# for dirpath, dirnames, filenames in os.walk(folder_in):
-# 	for filename in filenames:
+            else:
 
-# 		out_lines = []
+                ## seperate nationality
+                is_dem_match = 0
+                this_value_list = this_value.split(" , ")
+                if len(this_value_list) > 1:
+                    for each_con in this_value_list:
+                        if " " + each_con + " " in out_summary and each_con in dem_map:
+                            out_summary = out_summary.replace(" " + each_con + " ", " <" + this_name + "> ")
+                            is_dem_match = 1
+                            break
+                        if each_con in dem_map:
+                            this_con_list = dem_map[each_con]
+                            for this_con in this_con_list:
+                                if " " + this_con + " " in out_summary:
+                                    out_summary = out_summary.replace(" " + this_con + " ", " <" + this_name + "> ")
+                                    is_dem_match = 1
+                                    break
 
-# 		with open(folder_in + filename) as f:
-# 			lines = [line.strip() for line in f.readlines()]
+                if is_dem_match:
+                    continue
 
+                ### fuzzy match
+                # match threshold? len percent? start - end index offset
+                out_summary = fuzzy_match(out_summary, this_value, this_name)
 
-# 		for valid_ind in valid_line:
-# 			out_lines.append(lines[valid_ind])
 
-# 		print len(out_lines)
 
-# 		with open(folder_out + filename, "w") as f_out:
-# 			f_out.write("\n".join(out_lines))
+        print(box_list)
+        print(box_field_list)
+        print(out_summary)
+        print(summary)
+        print("\n")
 
-# def field_statistic(box_in):
-# 	'''
-# 	get most frequent field
-# 	'''
+        out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+        out_s.write(out_summary + "\n")
 
-# 	with open(box_in) as f:
-# 		lines_box = f.readlines()
+        out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+        out_t.write(summary.strip() + "\n")
+        out_t.write(out_summary + "\n")
+        out_t.write("\n")
 
-# 	field_dict = {}
 
 
-# 	for box in lines_box:
+    out_s.close()
+    out_b.close()
+    out_t.close()
 
-# 		box_list = box.strip().split("\t")
-# 		box_out_list, box_field_list = join_box(box_list)
 
-# 		for each_tup in box_out_list:
-# 			field_name = each_tup[0]
-# 			if field_name not in field_dict:
-# 				field_dict[field_name] = 0
-# 			field_dict[field_name] += 1
 
+def gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos, processed_summary, out_test):
+    '''
+    replace special token with unk
+    '''
 
-# 	sorted_x = sorted(field_dict.items(), key=operator.itemgetter(1), reverse=True)
+    ### load nationality demonyms.csv
+    dem_map = load_dem_map("/scratch/home/zhiyu/wiki2bio/other_data/demonyms.csv")
 
-# 	print len(lines_box)
-# 	print sorted_x[:10]
+    data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
+    sw = stopwords.words("english")
+    freq_vocab = load_local_vocab(data_path + "human_books_songs_films_word_vocab_500.txt")
 
-# def gen_bpe_data(box_in, summary_in, box_out, summary_out):
-# 	'''
-# 	convert original data to bpe
-# 	'''
 
-# 	with open(box_in) as f:
-# 		lines_box = f.readlines()
+    with open(in_box) as f:
+        lines_box = f.readlines()
 
-# 	with open(summary_in) as f:
-# 		lines_summary = f.readlines()
+    with open(in_summary) as f:
+        lines_summary = f.readlines()
 
+    with open(processed_summary) as f:
+        lines_pro_summary = f.readlines()
 
-# 	for line in lines_summary:
-# 		line = line.strip()
-# 		enc = encoder.get_encoder("117M")
-# 		tokens = enc.encode(line)
-# 		print line
-# 		print tokens
-# 		print "\n"
+    out_s = open(out_field, "w")
+    out_p = open(out_pos, "w")
+    out_rp = open(out_rpos, "w")
 
-def cal_rouge(gold_path, pred_path):
+    out_t = open(out_test, "w")
 
-	'''
-	calculate rouge for results
-	'''
+    for box, summary, pro_summary in zip (lines_box, lines_summary, lines_pro_summary):
 
-	k = 1000
-	gold_set = [[gold_path + str(i)] for i in range(k)]
-	pred_set = [pred_path + str(i) for i in range(k)]
+        box_list = box.strip().split("\t")
+        box_out_list, box_field_list = join_box(box_list)
 
-	recall, precision, F_measure = PythonROUGE(pred_set, gold_set, ngram_order=4)
+        tem_summary = summary.strip()
+        out_summary = summary.strip()
+        tem_summary_list = tem_summary.split(" ")
 
-	print ("F measure: %s, precision: %s, recall: %s" % (str(F_measure), str(precision), str(recall)))
+        out_field = np.zeros_like(out_summary.split(" ")).tolist()
+        for ind in range(len(out_field)):
+            out_field[ind] = '<_PAD>'
 
-def split_rouge(model_path, pred_path):
+        out_pos, out_rpos = [], []
 
-	'''
-	split rouge files
-	'''
+        for ind in range(len(out_field)):
+            out_pos.append(0)
+            out_rpos.append(0)
 
-	k = 0
+        for (this_name, this_value) in box_field_list:
 
-	with open(model_path) as f:
-		for line in f:
-			w_path = pred_path + "/pred_summary_" + str(k)
-			with open(w_path, "w") as out:
-				out.write(line)
+            this_value_dict = {}
+            for ind, each_token in enumerate(this_value.split(" ")):
+                if each_token not in this_value_dict:
+                    this_value_dict[each_token] = ind + 1
 
-			k += 1
+            this_value_list_len = len(this_value.split(" "))
 
+            if " " + this_value + " " in out_summary:
 
+                out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
 
-def plot():
 
-	x = [50, 100, 200, 500, 800, 1000]
-	# y = [2.2, 3.7, 4.9, 5.1, 5.2, 7.4]
 
+            ### name
+            elif out_summary.startswith(this_value + " "):
+                out_summary = out_summary.replace(this_value + " ", ("<" + this_name + "> ") * this_value_list_len)
 
-	# pl.plot(x, y, marker = 'o', markevery = 100, markersize = 5, color='c', label="FG-original")
+            ### nationality
+            elif this_value in dem_map:
+                this_value_list = dem_map[this_value]
+                for this_value in this_value_list:
+                    this_value_list_len = len(this_value.split(" "))
+                    if " " + this_value + " " in out_summary:
 
-	# y = [2.9, 5.1, 6.1, 8.3, 8.6, 9.2]
+                        out_summary = out_summary.replace(" " + this_value + " ", " " + ("<" + this_name + "> ") * this_value_list_len)
 
-	# pl.plot(x, y, marker = 'o', markevery = 100, markersize = 5, color='g', label="FG")
 
-	y = [15.6, 17.8, 21.3, 26.2, 28.4, 32.5]
+            else:
 
-	pl.plot(x, y, color='r', label="FG+switch")
+                ## seperate nationality
+                is_dem_match = 0
+                this_value_list = this_value.split(" , ")
+                if len(this_value_list) > 1:
+                    for each_con in this_value_list:
+                        if " " + each_con + " " in out_summary and each_con in dem_map:
+                            each_con_len = len(each_con.split(" "))
+                            out_summary = out_summary.replace(" " + each_con + " ", " " + ("<" + this_name + "> ") * each_con_len)
+                            is_dem_match = 1
+                            break
+                        if each_con in dem_map:
+                            this_con_list = dem_map[each_con]
+                            for this_con in this_con_list:
+                                if " " + this_con + " " in out_summary:
+                                    this_con_len = len(this_con.split(" "))
+                                    out_summary = out_summary.replace(" " + this_con + " ", " " + ("<" + this_name + "> ") * this_con_len)
+                                    is_dem_match = 1
+                                    break
 
-	y = [21.4, 26.5, 32.7, 39.7, 42.1, 42.6]
+                if is_dem_match:
+                    continue
 
-	pl.plot(x, y, color='b', label="FG+switch+LM(Ours)")
+                ### fuzzy match
+                # match threshold? len percent? start - end index offset
+                out_summary = fuzzy_match_rep(out_summary, this_value, this_name)
 
+            assert len(out_summary.split(" ")) == len(tem_summary_list)
 
-	pl.ylim([0, 50])
-	pl.xlim([0, 1000])
-	pl.xlabel('# of training examples', fontsize=15)
-	pl.ylabel('BLEU score', fontsize=15)
-	pl.legend(loc='upper right')
-	pl.gca().tick_params(labelsize=10)
-	pl.savefig("/scratch/home/zhiyu/wiki2bio/curve.pdf")
+            for ind, token in enumerate(out_summary.split(" ")):
+                if token == "<" + this_name + ">":
+                    out_field[ind] = this_name
+                    ori_token = tem_summary_list[ind]
+                    if ori_token in this_value_dict:
+                        out_pos[ind] = this_value_dict[ori_token]
+                        out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+
+        # print box_list
+        # print out_summary
+        # print summary.strip()
+        # print out_field
+        # print out_pos
+        # print out_rpos
+        # print "\n"
+
+        ### second fuzzy match. by individual word
+        for (this_name, this_value) in box_field_list:
+
+            this_value_dict = {}
+            for ind, each_token in enumerate(this_value.split(" ")):
+                if each_token not in this_value_dict:
+                    this_value_dict[each_token] = ind + 1
+
+            this_value_list_len = len(this_value.split(" "))
+            this_value_list = this_value.split(" ")
+
+            for ind, each_token in enumerate(out_summary.split(" ")):
+                if (each_token not in sw) and each_token not in string.punctuation:
+                    if each_token in this_value_dict:
+                        out_summary.replace(" " + each_token + " ", " <" + this_name + "> ")
+
+                        out_field[ind] = this_name
+                        out_pos[ind] = this_value_dict[each_token]
+                        out_rpos[ind] = this_value_list_len - (out_pos[ind] - 1)
+
+
+        assert len(out_summary.split(" ")) == len(tem_summary_list)
+
+        print(box_list)
+        print(out_summary)
+        print(summary.strip())
+        print(out_field)
+        print(out_pos)
+        print(out_rpos)
+        print("\n")
+
+        # out_b.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+        # out_s.write(out_summary + "\n")
+
+        out_t.write("\t".join([each_box[0] + ":" + each_box[1] for each_box in box_out_list]) + "\n")
+        out_t.write("\n")
+        out_t.write(summary.strip() + "\n")
+        out_t.write("\n")
+        out_t.write(out_summary + "\n")
+        out_t.write("\n")
+        out_t.write(pro_summary)
+        out_t.write("\n")
+
+        out_t.write("#########################\n")
+
+        # print out_field
+        # print len(out_field)
+        # print tem_summary
+        # print len(tem_summary_list)
+
+        assert len(out_field) == len(tem_summary_list)
+        assert len(tem_summary_list) == len(out_pos)
+        assert len(tem_summary_list) == len(out_rpos)
+
+        # for field_tmp, pos_tmp, rpos_tmp in zip(out_field, out_pos, out_rpos):
+        #   if field_tmp == "<_PAD>":
+        #       if pos_tmp != 0:
+        #           print box_list
+        #           print out_summary
+        #           print summary.strip()
+        #           print out_field
+        #           print out_pos
+        #           print out_rpos
+        #           print "\n"
+
+
+        out_s.write(" ".join(out_field) + "\n")
+        out_p.write(" ".join([str(tmp) for tmp in out_pos]) + "\n")
+        out_rp.write(" ".join([str(tmp) for tmp in out_rpos]) + "\n")
+
+
+
+
+    out_s.close()
+    out_p.close()
+    out_rp.close()
+
+
+def dec_checker(summary_in, dec_in):
+
+    with open(summary_in) as f_s:
+        lines_s = f_s.readlines()
+
+    with open(dec_in) as f_d:
+        line_d = f_d.readlines()
+
+
+    ind = 0
+    for summary, dec in zip(lines_s, line_d):
+        len_sum = len(summary.strip().split())
+        len_dec = len(dec.strip().split())
+        ind += 1
+
+
+        if len_sum != len_dec:
+            print(str(len_sum) + "\t" + str(len_dec) + "\n")
+
+
+def get_line_oov(file_in, file_out):
+    '''
+    utilitys.
+    get number of lines with 3
+    '''
+
+    with open(file_in) as f:
+        lines = f.readlines()
+
+    without_3 = []
+
+    for ind, line in enumerate(lines):
+
+        # if "3" in line.strip().split():
+        if "3" not in line.strip().split():
+            without_3.append(ind)
+
+
+    with open(file_out, "w") as f:
+        f.write("\n".join([str(tmp) for tmp in without_3]))
+
+    print(len(without_3))
+
+
+def remove_oov(folder_in, folder_out, valid_line_in):
+
+
+    with open(valid_line_in) as f:
+        valid_line = [int(tmp.strip()) for tmp in f.readlines()]
+
+    print(len(valid_line))
+    print("\n")
+
+
+    for dirpath, dirnames, filenames in os.walk(folder_in):
+        for filename in filenames:
+
+            out_lines = []
+
+            with open(folder_in + filename) as f:
+                lines = [line.strip() for line in f.readlines()]
+
+
+            for valid_ind in valid_line:
+                out_lines.append(lines[valid_ind])
+
+            print(len(out_lines))
+
+            with open(folder_out + filename, "w") as f_out:
+                f_out.write("\n".join(out_lines))
+
+
+
+def remove_oov_files(folder_in, folder_out, valid_line_in, filenames):
+
+
+    with open(valid_line_in) as f:
+        valid_line = [int(tmp.strip()) for tmp in f.readlines()]
+
+    print(len(valid_line))
+    print("\n")
+
+
+    # for dirpath, dirnames, filenames in os.walk(folder_in):
+    for filename in filenames:
+
+        out_lines = []
+
+        with open(folder_in + filename) as f:
+            lines = [line.strip() for line in f.readlines()]
+
+
+        for valid_ind in valid_line:
+            out_lines.append(lines[valid_ind])
+
+        print(len(out_lines))
+
+        with open(folder_out + filename, "w") as f_out:
+            f_out.write("\n".join(out_lines))
+
+
+
+
+
+def field_statistic(box_in):
+    '''
+    get most frequent field
+    '''
+
+    with open(box_in) as f:
+        lines_box = f.readlines()
+
+    field_dict = {}
+
+
+    for box in lines_box:
+
+        box_list = box.strip().split("\t")
+        box_out_list, box_field_list = join_box(box_list)
+
+        for each_tup in box_out_list:
+            field_name = each_tup[0]
+            if field_name not in field_dict:
+                field_dict[field_name] = 0
+            field_dict[field_name] += 1
+
+
+    sorted_x = sorted(field_dict.items(), key=operator.itemgetter(1), reverse=True)
+
+    print(len(lines_box))
+    print(sorted_x[:10])
+
+
+
+
 
 
 
 if __name__=='__main__':
 
+    box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data/test.box"
+    summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data/test.summary"
+    box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data_bpe/test.box"
+    summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data_bpe/test.summary"
+    gen_bpe_data(box_in, summary_in, box_out, summary_out)
 
-	plot()
+    # ### get field freq
+    # box_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.box"
+    # field_statistic(box_in)
 
+    # ### generate domain examples
+    # in_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.box"
+    # in_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.summary"
+    # out_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/films_200.box"
+    # out_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/films_200.summary"
 
+    # gen_sample_films(in_box, in_summary, out_box, out_summary, 200)
 
+    # ## remove 3 in all original processed files
+    # file_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data/test.summary.id"
+    # file_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
+    # get_line_oov(file_in, file_out)
 
+    # folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data_withoov/"
+    # folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data/"
 
-	# root_path = "/scratch/home/zhiyu/wiki2bio/"
-	# method_path = "few_shot_gpt-2_raw"
-	# domain = "songs"
-	# # train_nums_lst = [200]
-	# train_nums_lst = [50, 100, 200, 500]
-	# model_ind_lst = [11, 4, 12, 12]
+    # oov_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
 
+    # remove_oov(folder_in, folder_out, oov_line_in)
 
 
+    # folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data_withoov/"
+    # folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/"
 
-	# for train_nums, model_ind in zip(train_nums_lst, model_ind_lst):
-	# 	model_path = root_path + method_path + "/" + domain + "/results/res/res_" + str(train_nums) + "_emb" + "/loads/" + str(model_ind) + "/valid_summary.clean.txt"
-	# 	pred_path = root_path + method_path + "/" + domain + "/results/evaluation/res_" + str(train_nums) + "_emb" + "/" + str(model_ind)
-	# 	os.mkdir(pred_path)
+    # valid_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
+    # file_names = ["test.summary", "test.box"]
 
 
-	# 	split_rouge(model_path, pred_path)
+    # remove_oov_files(folder_in, folder_out, valid_line_in, file_names)
 
 
-	# for train_nums, model_ind in zip(train_nums_lst, model_ind_lst):
-	# 	print ("\n")
-	# 	print (train_nums)
-	# 	gold_path = root_path + method_path + "/" + domain + "/processed_data_" + str(train_nums) + "/" + "test/test_split_for_rouge/gold_summary_"
-	# 	pred_path = root_path + method_path + "/" + domain + "/results/evaluation/res_" + str(train_nums) + "_emb" + "/" + str(model_ind) + "/pred_summary_" 
+    # ### generate mask
+    # in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/valid.summary"
+    # in_box = "/scratch/home/zhiyu/wiki2bio/original_data/valid.box"
+    # out_field = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.field"
+    # out_pos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.pos"
+    # out_rpos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.rpos"
 
-	# 	cal_rouge(gold_path, pred_path)
+    # processed_summary = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/valid/valid.summary.id"
+    # test_case = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_valid_case.txt"
 
+    # gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos, processed_summary, test_case)
 
-	# box_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data/test.box"
-	# summary_in = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data/test.summary"
-	# box_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data_bpe/test.box"
-	# summary_out = "/scratch/home/zhiyu/wiki2bio/few_shot_gpt-2/films/original_data_bpe/test.summary"
-	# gen_bpe_data(box_in, summary_in, box_out, summary_out)
 
-	# ### get field freq
-	# box_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.box"
-	# field_statistic(box_in)
+    # dec_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/train/train.summary.id"
+    # summary_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_data/train.summary"
+    # dec_checker(summary_in, dec_in)
 
-	# ### generate domain examples
-	# in_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.box"
-	# in_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/test.summary"
-	# out_box = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/films_200.box"
-	# out_summary = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/domain_descriptions/films_200.summary"
+    # herbert <article_title> , jr. -lrb- born april 21 , 1945 in <birth_place> -rrb- is a former american football player .
 
-	# gen_sample_films(in_box, in_summary, out_box, out_summary, 200)
+    # out_summary = "hassan taftian -lrb- ; born 4 may 1993 in torbat-e heydarieh -rrb- is an iranian sprinter ."
+    # this_value = "04 may 1993"
+    # print fuzzy_match(source, substring, "replace")
 
-	# ## remove 3 in all original processed files
-	# file_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data/test.summary.id"
-	# file_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
-	# get_line_oov(file_in, file_out)
 
-	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data_withoov/"
-	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/processed_data/"
 
-	# oov_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
 
-	# remove_oov(folder_in, folder_out, oov_line_in)
+    # in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/test.summary"
+    # in_box = "/scratch/home/zhiyu/wiki2bio/original_data/test.box"
+    # out_file = "/scratch/home/zhiyu/wiki2bio/masked_summary.txt"
+    # gen_mask(in_summary, in_box, out_file)
 
+    # file_in = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs.summary.bak"
+    # file_out = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs.summary"
+    # process_songs(file_in, file_out)
 
-	# folder_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data_withoov/"
-	# folder_out = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/other_domain_data/films/original_data/"
+    # ori_vocab = "/scratch/home/zhiyu/wiki2bio/original_data/field_vocab.txt"
 
-	# valid_line_in = "/scratch/home/zhiyu/wiki2bio/emb_pointer_copyloss_am/films_lines_valid.txt"
-	# file_names = ["test.summary", "test.box"]
+    # check_in_vocab(ori_vocab, "published")
 
+    # file_in = summary_ours_in
+    # file_out = "/scratch/home/zhiyu/wiki2bio/cider/data/candidate-baseline.json"
+    # gen_cider_input(file_in, file_out)
 
-	# remove_oov_files(folder_in, folder_out, valid_line_in, file_names)
+    # file_in = summary_gold_in
+    # file_out = "/scratch/home/zhiyu/wiki2bio/cider/data/references.json"
+    # gen_cider_input(file_in, file_out)
 
 
-	# ### generate mask
-	# in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/valid.summary"
-	# in_box = "/scratch/home/zhiyu/wiki2bio/original_data/valid.box"
-	# out_field = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.field"
-	# out_pos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.pos"
-	# out_rpos = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/valid.rpos"
+    # gen_compare(cider_in, test_table, summary_ours_in, summary_with_unk, summary_gold_in, file_out)
 
-	# processed_summary = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/valid/valid.summary.id"
-	# test_case = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_valid_case.txt"
+    # metrics_dict = compute_metrics(hypothesis=summary_ours_in, references=[summary_gold_in])
 
-	# gen_mask_field_pos(in_summary, in_box, out_field, out_pos, out_rpos, processed_summary, test_case)
+    # print metrics_dict
 
 
-	# dec_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/processed_data/train/train.summary.id"
-	# summary_in = "/scratch/home/zhiyu/wiki2bio/emb_baseline_pointer/original_data/train.summary"
-	# dec_checker(summary_in, dec_in)
+    #check_field(train_table, "succession")
 
-	# herbert <article_title> , jr. -lrb- born april 21 , 1945 in <birth_place> -rrb- is a former american football player .
+    #merge_value_field_vocab("/scratch/home/zhiyu/wiki2bio/original_data/")
 
-	# out_summary = "hassan taftian -lrb- ; born 4 may 1993 in torbat-e heydarieh -rrb- is an iranian sprinter ."
-	# this_value = "04 may 1993"
-	# print fuzzy_match(source, substring, "replace")
 
+    # data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
 
+    # # domain = "books"
+    # # in_box = data_path + domain + ".box"
+    # # in_summary = data_path + domain + ".summary"
+    # # word_vocab_file = data_path + domain + "_word_vocab.txt"
+    # # field_vocab_file = data_path + domain + "_field_vocab.txt"
 
+    # # # # pc_all_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/personal_computers_word_vocab_all.txt"
+    # # # # final_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_vocab.txt"
+    # # # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_field_vocab.txt"
 
-	# in_summary = "/scratch/home/zhiyu/wiki2bio/original_data/test.summary"
-	# in_box = "/scratch/home/zhiyu/wiki2bio/original_data/test.box"
-	# out_file = "/scratch/home/zhiyu/wiki2bio/masked_summary.txt"
-	# gen_mask(in_summary, in_box, out_file)
+    # books_all_vocab = data_path + "books_word_vocab_all.txt"
+    # songs_all_vocab = data_path + "songs_word_vocab_all.txt"
+    # films_all_vocab = data_path + "films_word_vocab_all.txt"
 
-	# file_in = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs.summary.bak"
-	# file_out = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs.summary"
-	# process_songs(file_in, file_out)
+    # # # # books_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/books_field_vocab.txt"
+    # # # # songs_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs_field_vocab.txt"
+    # # # # films_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/films_field_vocab.txt"
 
-	# ori_vocab = "/scratch/home/zhiyu/wiki2bio/original_data/field_vocab.txt"
+    # # create_ori_vocab(in_box, in_summary, word_vocab_file, field_vocab_file, 1999)
+    # # merge_value_field_vocab(word_vocab_file, field_vocab_file, books_all_vocab)
 
-	# check_in_vocab(ori_vocab, "published")
+    # ori_vocab = data_path + "word_vocab_2000.txt"
+    # final_vocab = data_path + "human_books_songs_films_word_vocab_2000.txt"
 
-	# file_in = summary_ours_in
-	# file_out = "/scratch/home/zhiyu/wiki2bio/cider/data/candidate-baseline.json"
-	# gen_cider_input(file_in, file_out)
+    # # # # ori_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/field_vocab.txt"
+    # # # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/human_books_songs_films_field_vocab.txt"
 
-	# file_in = summary_gold_in
-	# file_out = "/scratch/home/zhiyu/wiki2bio/cider/data/references.json"
-	# gen_cider_input(file_in, file_out)
+    # add_vocab(ori_vocab, books_all_vocab, final_vocab)
+    # add_vocab(final_vocab, songs_all_vocab, final_vocab)
+    # add_vocab(final_vocab, films_all_vocab, final_vocab)
 
+    # add_vocab(ori_field_vocab, books_field_vocab, final_field_vocab)
+    # add_vocab(final_field_vocab, songs_field_vocab, final_field_vocab)
+    # add_vocab(final_field_vocab, films_field_vocab, final_field_vocab)
 
-	# gen_compare(cider_in, test_table, summary_ours_in, summary_with_unk, summary_gold_in, file_out)
 
-	# metrics_dict = compute_metrics(hypothesis=summary_ours_in, references=[summary_gold_in])
+    # ori_vocab = data_path + "word_vocab_200.txt"
 
-	# print metrics_dict
+    # books_all_vocab = data_path + "books_word_vocab_200.txt"
+    # songs_all_vocab = data_path + "songs_word_vocab_200.txt"
+    # films_all_vocab = data_path + "films_word_vocab_200.txt"
 
+    # final_vocab = data_path + "human_books_songs_films_word_vocab_200.txt"
 
-	#check_field(train_table, "succession")
+    # add_vocab_freq(ori_vocab, books_all_vocab, final_vocab)
+    # add_vocab_freq(final_vocab, songs_all_vocab, final_vocab)
+    # add_vocab_freq(final_vocab, films_all_vocab, final_vocab)
 
-	#merge_value_field_vocab("/scratch/home/zhiyu/wiki2bio/original_data/")
 
+    # file_in = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
+    # file_out = "/scratch/home/zhiyu/wiki2bio/emb_baseline/word_vocab.txt"
+    # extract_glove_vocab(file_in, file_out)
 
-	# data_path = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/"
 
-	# # domain = "books"
-	# # in_box = data_path + domain + ".box"
-	# # in_summary = data_path + domain + ".summary"
-	# # word_vocab_file = data_path + domain + "_word_vocab.txt"
-	# # field_vocab_file = data_path + domain + "_field_vocab.txt"
+    # file_in = "/scratch/home/zhiyu/wiki2bio/original_data/word_vocab.txt"
+    # file_out = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/word_vocab_2000.txt"
 
-	# # # # pc_all_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/personal_computers_word_vocab_all.txt"
-	# # # # final_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_vocab.txt"
-	# # # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/merged_field_vocab.txt"
+    # vocab = []
+    # ind = 0
+    # with open(file_in) as f:
+    #   for line in f:
+    #       line_list = line.strip().split()
+    #       if line_list[0].isdigit():
+    #           continue
+    #       vocab.append((line_list[0], line_list[1]))
+    #       ind += 1
 
-	# books_all_vocab = data_path + "books_word_vocab_all.txt"
-	# songs_all_vocab = data_path + "songs_word_vocab_all.txt"
-	# films_all_vocab = data_path + "films_word_vocab_all.txt"
+    #       if ind > 1999:
+    #           break
 
-	# # # # books_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/books_field_vocab.txt"
-	# # # # songs_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/songs_field_vocab.txt"
-	# # # # films_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/films_field_vocab.txt"
 
-	# # create_ori_vocab(in_box, in_summary, word_vocab_file, field_vocab_file, 1999)
-	# # merge_value_field_vocab(word_vocab_file, field_vocab_file, books_all_vocab)
+    # print len(vocab)
+    # with open(file_out, "w") as f:
+    #   for word in vocab:
+    #       f.write(word[0] + "\t" + word[1] + "\n")
 
-	# ori_vocab = data_path + "word_vocab_2000.txt"
-	# final_vocab = data_path + "human_books_songs_films_word_vocab_2000.txt"
 
-	# # # # ori_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/field_vocab.txt"
-	# # # # final_field_vocab = "/scratch/home/zhiyu/wiki2bio/crawled_data/human_books_songs_films_field_vocab.txt"
+    # ori_field = "/scratch/home/zhiyu/wiki2bio/original_data/field_vocab.txt"
+    # file_in = "/scratch/home/zhiyu/wiki2bio/crawled_data/word_vocab_tmp.txt"
+    # merge_value_field_vocab(file_in, ori_field, ori_vocab)
 
-	# add_vocab(ori_vocab, books_all_vocab, final_vocab)
-	# add_vocab(final_vocab, songs_all_vocab, final_vocab)
-	# add_vocab(final_vocab, films_all_vocab, final_vocab)
 
-	# add_vocab(ori_field_vocab, books_field_vocab, final_field_vocab)
-	# add_vocab(final_field_vocab, songs_field_vocab, final_field_vocab)
-	# add_vocab(final_field_vocab, films_field_vocab, final_field_vocab)
-
-
-	# ori_vocab = data_path + "word_vocab_200.txt"
-
-	# books_all_vocab = data_path + "books_word_vocab_200.txt"
-	# songs_all_vocab = data_path + "songs_word_vocab_200.txt"
-	# films_all_vocab = data_path + "films_word_vocab_200.txt"
-
-	# final_vocab = data_path + "human_books_songs_films_word_vocab_200.txt"
-
-	# add_vocab_freq(ori_vocab, books_all_vocab, final_vocab)
-	# add_vocab_freq(final_vocab, songs_all_vocab, final_vocab)
-	# add_vocab_freq(final_vocab, films_all_vocab, final_vocab)
-
-
-	# file_in = "/scratch/home/zhiyu/wiki2bio/other_data/glove.6B.300d.txt"
-	# file_out = "/scratch/home/zhiyu/wiki2bio/emb_baseline/word_vocab.txt"
-	# extract_glove_vocab(file_in, file_out)
-
-
-	# file_in = "/scratch/home/zhiyu/wiki2bio/original_data/word_vocab.txt"
-	# file_out = "/scratch/home/zhiyu/wiki2bio/crawled_data/pointer/word_vocab_2000.txt"
-
-	# vocab = []
-	# ind = 0
-	# with open(file_in) as f:
-	# 	for line in f:
-	# 		line_list = line.strip().split()
-	# 		if line_list[0].isdigit():
-	# 			continue
-	# 		vocab.append((line_list[0], line_list[1]))
-	# 		ind += 1
-
-	# 		if ind > 1999:
-	# 			break
-
-
-	# print len(vocab)
-	# with open(file_out, "w") as f:
-	# 	for word in vocab:
-	# 		f.write(word[0] + "\t" + word[1] + "\n")
-
-
-	# ori_field = "/scratch/home/zhiyu/wiki2bio/original_data/field_vocab.txt"
-	# file_in = "/scratch/home/zhiyu/wiki2bio/crawled_data/word_vocab_tmp.txt"
-	# merge_value_field_vocab(file_in, ori_field, ori_vocab)
-
-
-	# glove_in = "/scratch/home/zhiyu/wiki2bio/other_data/glove.42B.300d.zip"
-	# field_in = "/scratch/home/zhiyu/wiki2bio/crawled_data/books_field_vocab.txt"
-	# check_glove_coverage(glove_in, field_in)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # glove_in = "/scratch/home/zhiyu/wiki2bio/other_data/glove.42B.300d.zip"
+    # field_in = "/scratch/home/zhiyu/wiki2bio/crawled_data/books_field_vocab.txt"
+    # check_glove_coverage(glove_in, field_in)

@@ -8,14 +8,14 @@ import zipfile
 TOTAL_BAR_LENGTH = 100.
 last_time = time.time()
 begin_time = last_time
-print (os.popen('stty size', 'r').read())
+print(os.popen('stty size', 'r').read())
 _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 
 
 #### by hongmin
 def bleu_score(labels_file, predictions_path):
-    bleu_script = '/scratch/home/zhiyu/wiki2bio/wikitobio/multi-bleu.perl'
+    bleu_script = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'multi-bleu.perl')
     try:
       with io.open(predictions_path, encoding="utf-8", mode="r") as predictions_file:
         bleu_out = subprocess.check_output(
@@ -24,7 +24,7 @@ def bleu_score(labels_file, predictions_path):
             stderr=subprocess.STDOUT)
         bleu_out = bleu_out.decode("utf-8")
         bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
-        print (bleu_score)
+        print(bleu_score)
         return float(bleu_score)
 
     except subprocess.CalledProcessError as error:
@@ -118,7 +118,7 @@ def create_init_embedding(vocab_file, extend_vocab_size, word2vec_file, emblen):
     '''
 
     vocab = load_vocab(vocab_file)
-    print ("vocab len: ", len(vocab))
+    print("vocab len: ", len(vocab))
 
     init_embedding = np.random.uniform(-np.sqrt(3), np.sqrt(3), size = (len(vocab) + extend_vocab_size, emblen))
 
@@ -192,6 +192,7 @@ def progress_bar(current, total, msg=None):
         sys.stdout.write('\n')
     sys.stdout.flush()
 
+
 def format_time(seconds):
     days = int(seconds / 3600/24)
     seconds = seconds - days*3600*24
@@ -224,15 +225,21 @@ def format_time(seconds):
         f = '0ms'
     return f
 
-def copy_file(dst, src=os.getcwd()):
-    files = os.listdir(src)
-    for file in files:
-        file_ext = file.split('.')[-1]
-        if file_ext=='py':
-            shutil.copy(os.path.join(src,file), dst)
 
 def write_word(pred_list, save_dir, name):
     ss = open(save_dir + name, "w+")
     for item in pred_list:
         ss.write(" ".join(item) + '\n')
-            
+
+
+def get_current_git_version():
+    import git
+    repo = git.Repo(search_parent_directories=True)
+    sha = repo.head.object.hexsha
+    return sha
+
+
+def write_log(log_file, s):
+    print(s)
+    with open(log_file, 'a') as f:
+        f.write(s+'\n')

@@ -58,8 +58,7 @@ def PythonROUGE(guess_summ_list,ref_summ_list,ngram_order=2):
         xml_file.write('</EVAL>\n')
     xml_file.write('</ROUGE-EVAL>\n')
     xml_file.close()
-    
-    
+
     # this is the file where the output of ROUGE will be stored
     ROUGE_output_path = prefix + 'ROUGE_result.txt'
     
@@ -73,7 +72,7 @@ def PythonROUGE(guess_summ_list,ref_summ_list,ngram_order=2):
     precision_list = list()
     F_measure_list = list()
     ROUGE_output_file = open(ROUGE_output_path,'r')
-    for n in xrange(ngram_order):
+    for n in range(ngram_order):
         ROUGE_output_file.seek(0)
         for line in ROUGE_output_file:
             match = re.findall('X ROUGE-' + str(n+1) + ' Average_R: ([0-9.]+)',line)
@@ -126,6 +125,6 @@ if __name__ == '__main__':
     guess_summary_list = ['Example/Guess_Summ_1.txt','Example/Guess_Summ_2.txt']
     ref_summ_list = [['Example/Ref_Summ_1_1.txt','Example/Ref_Summ_1_2.txt'] , ['Example/Ref_Summ_2_1.txt','Example/Ref_Summ_2_2.txt','Example/Ref_Summ_2_3.txt']]
     recall_list,precision_list,F_measure_list = PythonROUGE(guess_summary_list,ref_summ_list)
-    print 'recall = ' + str(recall_list)
-    print 'precision = ' + str(precision_list)
-    print 'F = ' + str(F_measure_list)
+    print('recall = ' + str(recall_list))
+    print('precision = ' + str(precision_list))
+    print('F = ' + str(F_measure_list))
