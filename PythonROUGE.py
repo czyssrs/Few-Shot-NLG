@@ -58,8 +58,7 @@ def PythonROUGE(guess_summ_list,ref_summ_list,ngram_order=2):
         xml_file.write('</EVAL>\n')
     xml_file.write('</ROUGE-EVAL>\n')
     xml_file.close()
-    
-    
+
     # this is the file where the output of ROUGE will be stored
     ROUGE_output_path = prefix + 'ROUGE_result.txt'
     

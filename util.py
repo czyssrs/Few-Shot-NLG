@@ -192,6 +192,7 @@ def progress_bar(current, total, msg=None):
         sys.stdout.write('\n')
     sys.stdout.flush()
 
+
 def format_time(seconds):
     days = int(seconds / 3600/24)
     seconds = seconds - days*3600*24
@@ -224,15 +225,21 @@ def format_time(seconds):
         f = '0ms'
     return f
 
-def copy_file(dst, src=os.getcwd()):
-    files = os.listdir(src)
-    for file in files:
-        file_ext = file.split('.')[-1]
-        if file_ext=='py':
-            shutil.copy(os.path.join(src,file), dst)
 
 def write_word(pred_list, save_dir, name):
     ss = open(save_dir + name, "w+")
     for item in pred_list:
         ss.write(" ".join(item) + '\n')
-            
+
+
+def get_current_git_version():
+    import git
+    repo = git.Repo(search_parent_directories=True)
+    sha = repo.head.object.hexsha
+    return sha
+
+
+def write_log(log_file, s):
+    print(s)
+    with open(log_file, 'a') as f:
+        f.write(s+'\n')

@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.training import HParams
 
+
 def default_hparams():
     return HParams(
         n_vocab_original=0,
@@ -12,19 +13,23 @@ def default_hparams():
         n_layer=12,
     )
 
+
 def shape_list(x):
     """Deal with dynamic shape in tensorflow cleanly."""
     static = x.shape.as_list()
     dynamic = tf.shape(x)
     return [dynamic[i] if s is None else s for i, s in enumerate(static)]
 
+
 def softmax(x, axis=-1):
     x = x - tf.reduce_max(x, axis=axis, keepdims=True)
     ex = tf.exp(x)
     return ex / tf.reduce_sum(ex, axis=axis, keepdims=True)
 
+
 def gelu(x):
     return 0.5*x*(1+tf.tanh(np.sqrt(2/np.pi)*(x+0.044715*tf.pow(x, 3))))
+
 
 def norm(x, scope, *, axis=-1, epsilon=1e-5):
     """Normalize to mean = 0, std = 1, then do a diagonal affine transform."""
@@ -38,15 +43,18 @@ def norm(x, scope, *, axis=-1, epsilon=1e-5):
         x = x*g + b
         return x
 
+
 def split_states(x, n):
     """Reshape the last dimension of x into [n, x.shape[-1]/n]."""
     *start, m = shape_list(x)
     return tf.reshape(x, start + [n, m//n])
 
+
 def merge_states(x):
     """Smash the last two dimensions of x into a single dimension."""
     *start, a, b = shape_list(x)
     return tf.reshape(x, start + [a*b])
+
 
 def conv1d(x, scope, nf, *, w_init_stdev=0.02):
     with tf.variable_scope(scope):
@@ -55,6 +63,7 @@ def conv1d(x, scope, nf, *, w_init_stdev=0.02):
         b = tf.get_variable('b', [nf], initializer=tf.constant_initializer(0))
         c = tf.reshape(tf.matmul(tf.reshape(x, [-1, nx]), tf.reshape(w, [-1, nf]))+b, start+[nf])
         return c
+
 
 def attention_mask(nd, ns, *, dtype):
     """1's in the lower triangle, counting from the lower right corner.
@@ -130,8 +139,10 @@ def block(x, scope, *, past, hparams):
         x = x + m
         return x, present
 
+
 def past_shape(*, hparams, batch_size=None, sequence=None):
     return [None, hparams.n_layer, 2, hparams.n_head, sequence, hparams.n_embd // hparams.n_head]
+
 
 def expand_tile(value, size):
     """Add a new axis of given size."""
@@ -139,33 +150,19 @@ def expand_tile(value, size):
     ndims = value.shape.ndims
     return tf.tile(tf.expand_dims(value, axis=0), [size] + [1]*ndims)
 
+
 def positions_for(tokens, past_length):
     batch_size = tf.shape(tokens)[0]
     nsteps = tf.shape(tokens)[1]
     return expand_tile(past_length + tf.range(nsteps), batch_size)
 
-def gpt_emb_init(scope, hparams):
-    with tf.variable_scope(scope):
-        wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
-                             initializer=tf.random_normal_initializer(stddev=0.02))
 
-# def gpt_emb_init_tune(scope, hparams, select_ind):
-#     with tf.variable_scope(scope):
-
-#         wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
-#                              initializer=tf.random_normal_initializer(stddev=0.02))
-
-#         # selected = tf.nn.embedding_lookup(wte, select_ind)
-
-#         wte_tune = tf.get_variable('wte_tune', initializer=wte, trainable=False)
-
+# ADDED
 def gpt_emb_init_tune(scope, hparams):
     with tf.variable_scope(scope):
 
         wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
                              initializer=tf.random_normal_initializer(stddev=0.02))
-
-        # selected = tf.nn.embedding_lookup(wte, select_ind)
 
         wte_tune = tf.get_variable('wte_tune', initializer=wte, trainable=False)
 
@@ -180,21 +177,20 @@ def model(hparams, X, past=None, scope='model', reuse=False):
             wpe = tf.get_variable('wpe', [hparams.n_ctx, hparams.n_embd],
                                  initializer=tf.random_normal_initializer(stddev=0.01))
 
-
+            # CHANGE: make wte not trainable
             # wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
             #                      initializer=tf.random_normal_initializer(stddev=0.02))
 
             wte_tune = tf.get_variable('wte_tune', [hparams.n_vocab, hparams.n_embd], trainable=False)
 
-
             past_length = 0 if past is None else tf.shape(past)[-2]
 
+            # CHANGE: get embeddings from wte_tune not wte
             # wte_emb = tf.gather(wte, X, name="wte_emb")
+            # h = tf.gather(wte, X) + tf.gather(wpe, positions_for(X, past_length))
             wte_emb = tf.gather(wte_tune, X, name="wte_emb")
             wpe_emb = tf.gather(wpe, positions_for(X, past_length), name="wpe_emb")
             h = wte_emb + wpe_emb
-
-            # h = tf.gather(wte, X) + tf.gather(wpe, positions_for(X, past_length))
 
         with tf.device("/gpu:2"):
             presents = []
@@ -206,10 +202,9 @@ def model(hparams, X, past=None, scope='model', reuse=False):
             results['present'] = tf.stack(presents, axis=1) # [batch, layer, 2, heads, sequence, features], where 2 is [k, v]
             h = norm(h, 'ln_f')
 
-
-        # with tf.device("/gpu:0"):
             # Language model loss.  Do tokens <n predict token n?
             h_flat = tf.reshape(h, [batch*sequence, hparams.n_embd])
+            # CHANGE: use wte_tune
             # logits = tf.matmul(h_flat, wte, transpose_b=True)
             logits = tf.matmul(h_flat, wte_tune, transpose_b=True)
             logits = tf.reshape(logits, [batch, sequence, hparams.n_vocab])
