@@ -19,5 +19,5 @@ python ./Main.py --root_path ~/Data/NLP/few_shot_nlg/ --domain humans --gpt_mode
 
 Where the root path is the data folder. Specify an output path to store the results. The data preprocessing code can be found in preprocess.py. 
 
-If you find our work helpful, please cite our arxiv version for now. 
+If you find our work helpful, please cite our arxiv version. 
 
