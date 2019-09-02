@@ -10,7 +10,7 @@ pip install -r requirements.txt
 Data and pre-trained GPT-2 can be downloaded via dropbox: https://www.dropbox.com/sh/u3t8yhcctqczpo0/AAAZV7S-qoIyaQW99r_88nUra?dl=0
 ```
 -- sample_data: a sample train and test data for humans domain
--- data: full datasets
+-- data: full datasets for songs and books domain
 -- models: pre-trained GPT-2 
 ```
 To run our code, go to the code folder and run with: 
