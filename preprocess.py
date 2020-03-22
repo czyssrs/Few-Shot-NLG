@@ -596,7 +596,7 @@ def split_summary_for_rouge(subdir):
         fread = open(fi, 'r')
         k = 0
         for line in fread:
-            with open(bwfile[i] + 'gold_summary_' + str(k), 'w') as sw:
+            with open(bwfile[i] + '/gold_summary_' + str(k), 'w') as sw:
                 sw.write(line.strip() + '\n')
             k += 1
         fread.close()

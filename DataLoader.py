@@ -198,14 +198,15 @@ class DataLoader:
             # context = [self.eos] * (max_summary_len - summary_len) + summary
             summary = summary + [self.eos] * (max_summary_len - summary_len)
 
-            dec_field = dec_field + [self.empty] * (max_summary_len - summary_len)
+            # empty field id is 0
+            dec_field = dec_field + [0] * (max_summary_len - summary_len)
             dec_pos = dec_pos + [0] * (max_summary_len - summary_len)
             dec_rpos = dec_rpos + [0] * (max_summary_len - summary_len)
 
             context = [self.empty] * (max_cont_len - cont_len) + cont_text
 
             text = text + [self.empty] * (max_text_len - text_len)
-            field = field + [self.empty] * (max_text_len - text_len)
+            field = field + [0] * (max_text_len - text_len)
             pos = pos + [0] * (max_text_len - text_len)
             rpos = rpos + [0] * (max_text_len - text_len)
 
