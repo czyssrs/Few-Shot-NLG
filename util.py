@@ -13,7 +13,6 @@ _, term_width = os.popen('stty size', 'r').read().split()
 term_width = int(term_width)
 
 
-#### by hongmin
 def bleu_score(labels_file, predictions_path):
     bleu_script = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'multi-bleu.perl')
     try:

@@ -16,7 +16,7 @@ class SeqUnit(object):
     def __init__(self, batch_size, hidden_size, emb_size, field_size, pos_size, source_vocab, field_vocab,
                  position_vocab, target_vocab, field_concat, position_concat, fgate_enc, dual_att,
                  encoder_add_pos, decoder_add_pos, learning_rate, scope_name, name, use_coverage, coverage_penalty, 
-                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, vocab_ind, empty_token=28920, stop_token=50256, max_length=85):
+                 fieldid2word, copy_gate_penalty, use_copy_gate, gpt_hparams, vocab_ind, empty_token=2, stop_token=50256, max_length=85):
         '''
         batch_size, hidden_size, emb_size, field_size, pos_size: size of batch; hidden layer; word/field/position embedding
         source_vocab, target_vocab, field_vocab, position_vocab: vocabulary size of encoder words; decoder words; field types; position
@@ -26,7 +26,7 @@ class SeqUnit(object):
 
         ###
         original full vocab ind
-        empty_token=28920, stop_token=50256
+        empty_token=2, stop_token=50256
         '''
 
         # data options
@@ -257,44 +257,40 @@ class SeqUnit(object):
             self.embedding = tf.get_variable('wte_tune', [self.gpt_hparams.n_vocab, self.gpt_hparams.n_embd], trainable=False)
 
         # look up and combine embeddings
-        with tf.device("/gpu:1"):
-            with tf.variable_scope(self.scope_name):
-                self.field_id2word = tf.constant(self.fieldid2word)
-                
-                self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
-                self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
+        # with tf.device("/gpu:1"):
+        with tf.variable_scope(self.scope_name):
+            self.field_id2word = tf.constant(self.fieldid2word)
+            
+            self.encoder_embed = tf.nn.embedding_lookup(self.embedding, self.encoder_input)
+            self.decoder_embed = tf.nn.embedding_lookup(self.embedding, self.decoder_input)
 
-                if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
-                    self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
-                    self.field_embed = tf.reduce_mean(
-                                        tf.nn.embedding_lookup(self.embedding, self.field_word), 2)
-                    self.field_pos_embed = self.field_embed
+            if self.field_concat or self.fgate_enc or self.encoder_add_pos or self.decoder_add_pos: # True
+                self.field_word = tf.nn.embedding_lookup(self.field_id2word, self.encoder_field) # batch * enc_len * 3
+                self.field_embed = tf.reduce_mean(
+                                    tf.nn.embedding_lookup(self.embedding, self.field_word), 2)
+                self.field_pos_embed = self.field_embed
 
-                if self.position_concat or self.encoder_add_pos or self.decoder_add_pos: # True
-                    self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
-                    self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
-                    self.pos_embed = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
-                    self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
-                    if self.encoder_add_pos or self.decoder_add_pos: # True
-                        self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
+            if self.position_concat or self.encoder_add_pos or self.decoder_add_pos: # True
+                self.pembedding = tf.get_variable('pembedding', [self.position_vocab, self.pos_size])
+                self.rembedding = tf.get_variable('rembedding', [self.position_vocab, self.pos_size])
+                self.pos_embed = tf.nn.embedding_lookup(self.pembedding, self.encoder_pos)
+                self.rpos_embed = tf.nn.embedding_lookup(self.rembedding, self.encoder_rpos)
+                if self.encoder_add_pos or self.decoder_add_pos: # True
+                    self.field_pos_embed = tf.concat([self.field_embed, self.pos_embed, self.rpos_embed], 2)
 
-                self.field_word_dec = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_input) # batch * dec_len * 3
-                self.field_embed_dec = tf.reduce_mean(
-                                        tf.nn.embedding_lookup(self.embedding, self.field_word_dec), 2)
+            self.field_word_dec = tf.nn.embedding_lookup(self.field_id2word, self.decoder_field_input) # batch * dec_len * 3
+            self.field_embed_dec = tf.reduce_mean(
+                                    tf.nn.embedding_lookup(self.embedding, self.field_word_dec), 2)
 
-                self.pos_embed_dec = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_input)
-                self.rpos_embed_dec = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_input)
+            self.pos_embed_dec = tf.nn.embedding_lookup(self.pembedding, self.decoder_pos_input)
+            self.rpos_embed_dec = tf.nn.embedding_lookup(self.rembedding, self.decoder_rpos_input)
 
-                ### decoder plus start token
-                self.decoder_field_pos_emb = tf.concat([self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
-                field_pos_embed_size = tf.shape(self.decoder_field_pos_emb)[2]
-                field_pos_embed_zeros = tf.zeros([self.batch_size, 1, field_pos_embed_size])
-                self.decoder_field_pos_emb = tf.concat([field_pos_embed_zeros, self.decoder_field_pos_emb], 1) # dec_len + 1
+            ### decoder plus start token
+            self.decoder_field_pos_emb = tf.concat([self.field_embed_dec, self.pos_embed_dec, self.rpos_embed_dec], 2)
+            field_pos_embed_size = tf.shape(self.decoder_field_pos_emb)[2]
+            field_pos_embed_zeros = tf.zeros([self.batch_size, 1, field_pos_embed_size])
+            self.decoder_field_pos_emb = tf.concat([field_pos_embed_zeros, self.decoder_field_pos_emb], 1) # dec_len + 1
 
-        # FIXME why are we tracking this
-        if self.position_concat or self.encoder_add_pos or self.decoder_add_pos:
-            self.params.update({'pembedding': self.pembedding})
-            self.params.update({'rembedding': self.rembedding})
 
     def fgate_encoder(self, inputs, fields, inputs_len):
         batch_size = tf.shape(self.encoder_input)[0]

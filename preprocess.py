@@ -8,7 +8,8 @@ import sys
 
 # bpe vocab
 enc = encoder.get_encoder("117M")
-field_empty = 28920
+# “#” 
+field_empty = 2
 eos = 50256
 
 
@@ -220,14 +221,14 @@ def gen_mask_field_pos(dem_file, in_summary, in_box, out_field, out_pos, out_rpo
             out_rpos_bpe.append(0)
 
         for ind in range(out_bpe_len):
-            out_field_bpe.append('empty')
+            out_field_bpe.append('#')
 
         for ind in range(len(tem_summary_list)):
             out_pos.append(0)
             out_rpos.append(0)
 
         for ind in range(len(tem_summary_list)):
-            out_field.append('empty')
+            out_field.append('#')
 
         for (this_name, this_value) in box_field_list:
             this_value_dict = {}
@@ -644,7 +645,7 @@ def table2id(subdir, merge_field_vocab, dem_file):
 
     # write field to word mapping
     key_map = dict()
-    key_map['empty'] = 0
+    key_map['#'] = 0
     cnt = 1
     with open(merge_field_vocab, "r") as v:
         for line in v:
@@ -732,7 +733,7 @@ def table2id(subdir, merge_field_vocab, dem_file):
                 if bpe_token in enc.encoder:
                     res_val_list.append(str(enc.encoder[bpe_token]))
                 else:
-                    res_val_list.append(str(enc.encoder["empty"]))
+                    res_val_list.append(str(enc.encoder["#"]))
 
             # res_val_list = [str(enc.encoder[bpe_token]) for bpe_token in line_val_list]
             fvalo.write(" ".join(res_val_list) + "\n")

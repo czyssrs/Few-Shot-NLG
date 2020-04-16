@@ -170,29 +170,29 @@ def gpt_emb_init_tune(scope, hparams):
 def model(hparams, X, past=None, scope='model', reuse=False):
     with tf.variable_scope(scope, reuse=reuse):
 
+        # with tf.device("/gpu:1"):
+        results = {}
+        batch, sequence = shape_list(X)
+
+        wpe = tf.get_variable('wpe', [hparams.n_ctx, hparams.n_embd],
+                             initializer=tf.random_normal_initializer(stddev=0.01))
+
+        # CHANGE: make wte not trainable
+        # wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
+        #                      initializer=tf.random_normal_initializer(stddev=0.02))
+
+        wte_tune = tf.get_variable('wte_tune', [hparams.n_vocab, hparams.n_embd], trainable=False)
+
+        past_length = 0 if past is None else tf.shape(past)[-2]
+
+        # CHANGE: get embeddings from wte_tune not wte
+        # wte_emb = tf.gather(wte, X, name="wte_emb")
+        # h = tf.gather(wte, X) + tf.gather(wpe, positions_for(X, past_length))
+        wte_emb = tf.gather(wte_tune, X, name="wte_emb")
+        wpe_emb = tf.gather(wpe, positions_for(X, past_length), name="wpe_emb")
+        h = wte_emb + wpe_emb
+
         with tf.device("/gpu:1"):
-            results = {}
-            batch, sequence = shape_list(X)
-
-            wpe = tf.get_variable('wpe', [hparams.n_ctx, hparams.n_embd],
-                                 initializer=tf.random_normal_initializer(stddev=0.01))
-
-            # CHANGE: make wte not trainable
-            # wte = tf.get_variable('wte', [hparams.n_vocab, hparams.n_embd],
-            #                      initializer=tf.random_normal_initializer(stddev=0.02))
-
-            wte_tune = tf.get_variable('wte_tune', [hparams.n_vocab, hparams.n_embd], trainable=False)
-
-            past_length = 0 if past is None else tf.shape(past)[-2]
-
-            # CHANGE: get embeddings from wte_tune not wte
-            # wte_emb = tf.gather(wte, X, name="wte_emb")
-            # h = tf.gather(wte, X) + tf.gather(wpe, positions_for(X, past_length))
-            wte_emb = tf.gather(wte_tune, X, name="wte_emb")
-            wpe_emb = tf.gather(wpe, positions_for(X, past_length), name="wpe_emb")
-            h = wte_emb + wpe_emb
-
-        with tf.device("/gpu:2"):
             presents = []
             pasts = tf.unstack(past, axis=1) if past is not None else [None] * hparams.n_layer
             assert len(pasts) == hparams.n_layer

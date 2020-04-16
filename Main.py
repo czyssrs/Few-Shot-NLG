@@ -17,10 +17,10 @@ import time
 
 
 # paths and mode
-tf.app.flags.DEFINE_string("root_path", "data/", "full path of data folder")
+tf.app.flags.DEFINE_string("root_path", "../data_release/", "full path of data folder")
 tf.app.flags.DEFINE_string("domain",'humans','domain name')
-tf.app.flags.DEFINE_string("gpt_model_name",'117M','full path of gpt2 model')
-tf.app.flags.DEFINE_string("output_path", "new_model", "full path of saved output")
+tf.app.flags.DEFINE_string("gpt_model_name",'../models/117M','full path of gpt2 model')
+tf.app.flags.DEFINE_string("output_path", "../tmp/", "full path of saved output")
 tf.app.flags.DEFINE_string("mode",'train','train or test')
 tf.app.flags.DEFINE_string("saved_model_path",'temp','saved model path for use in test mode')
 
@@ -56,8 +56,8 @@ tf.app.flags.DEFINE_integer("epoch", 5000, "Number of training epoch.")
 tf.app.flags.DEFINE_float("learning_rate", 0.0003,'learning rate')
 
 # logging
-tf.app.flags.DEFINE_integer("report", 50,'report valid results after some steps')
-tf.app.flags.DEFINE_integer("report_loss", 20,'report loss results after some steps')
+tf.app.flags.DEFINE_integer("report", 30,'report valid results after some steps')
+tf.app.flags.DEFINE_integer("report_loss", 10,'report loss results after some steps')
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -89,7 +89,7 @@ processed_data_dir = os.path.join(root_path, FLAGS.domain, "processed_data")
 last_best = 0.0
 enc = encoder.get_encoder("117M")
 eos = 50256 #TODO move to settings
-empty = 28920 #TODO move to settings
+empty = 2 #TODO move to settings
 
 
 def train(sess, preprocessed_data, model):

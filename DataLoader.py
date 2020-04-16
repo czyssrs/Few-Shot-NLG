@@ -94,7 +94,7 @@ class Preprocessor:
 
 class DataLoader:
     def __init__(self, data, domain, batch_size=64, shuffle=True, man_text_len=150,
-                 man_summary_len=85, eos=50256, empty=28920):
+                 man_summary_len=85, eos=50256, empty=2):
         """
         Main dataloader
         Args:
