@@ -4,7 +4,9 @@ https://arxiv.org/abs/1904.09521
 
 
 ## Installation
+```
 pip install -r requirements.txt
+```
 
 ## Instructions
 Data and pre-trained GPT-2 can be downloaded via dropbox: https://www.dropbox.com/sh/u3t8yhcctqczpo0/AAAZV7S-qoIyaQW99r_88nUra?dl=0
@@ -17,13 +19,13 @@ Data and pre-trained GPT-2 can be downloaded via dropbox: https://www.dropbox.co
 To run our code, go to the code folder and run with: 
 
 Data preprocessing:
-
+```
 python preprocess.py ~/Data/NLP/few_shot_nlg/ humans
-
+```
 Training:
-
+```
 python ./Main.py --root_path ~/Data/NLP/few_shot_nlg/ --domain humans --gpt_model_name ../models/117M/ --output_path ~/Output/
-
+```
 Where the root path is the data folder. Specify an output path to store the results. 
 
 If you find our work helpful, please cite the arxiv version. 
