@@ -10,12 +10,11 @@ pip install -r requirements.txt
 
 ## Instructions
 Data and pre-trained GPT-2 can be downloaded via dropbox: https://www.dropbox.com/sh/u3t8yhcctqczpo0/AAAZV7S-qoIyaQW99r_88nUra?dl=0
-```
--- data_release
----- original: full datasets for each domain
----- humans / books / songs: datasets for each domain. We provide an example processed data for 100 training examples, in preprocessed_data folder, that you can directly train the model with. To get training data of other sizes, you can go to the original_data folder to sample training sets from sample_source.box and sample_source.summary, e.g., head -n 200 sample_source.box > train.box ; head -n 200 sample_source.summary > train.summary, and then run data preprocessing to generate preprocessed data.
--- models: pre-trained GPT-2 
-```
+
+- original: full datasets for each domain
+- humans / books / songs: datasets for each domain. We provide an example processed data for 100 training examples, in preprocessed_data folder, that you can directly train the model with. To get training data of other sizes, you can go to the original_data folder to sample training sets from sample_source.box and sample_source.summary, e.g., head -n 200 sample_source.box > train.box ; head -n 200 sample_source.summary > train.summary, and then run data preprocessing to generate preprocessed data.
+- models: pre-trained GPT-2 
+
 To run our code, go to the code folder and run with: 
 
 Data preprocessing:
