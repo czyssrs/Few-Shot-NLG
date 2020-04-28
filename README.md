@@ -8,7 +8,7 @@ https://arxiv.org/abs/1904.09521
 pip install -r requirements.txt
 ```
 
-Due to the large consumption of GPU memory of GPT-2, we split the model into two cards and the consumption of each does not exceed 12G. 
+Due to the large consumption of GPU memory of GPT-2, we split the model onto two cards and the consumption on each does not exceed 12G. 
 
 ## Instructions
 Data and pre-trained GPT-2 can be downloaded via dropbox: https://www.dropbox.com/sh/u3t8yhcctqczpo0/AAAZV7S-qoIyaQW99r_88nUra?dl=0
