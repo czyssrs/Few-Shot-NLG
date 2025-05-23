@@ -13,7 +13,7 @@ Due to the large consumption of GPU memory of GPT-2, we split the model onto two
 ## Instructions
 
 ### Dataset
-Data and pre-trained GPT-2 can be downloaded via [Dropbox](https://www.dropbox.com/scl/fi/oafk1fno8j0caypijx82g/data_release.zip?rlkey=5qruam81vak4q5w9818lfuv8x&st=5hl5p1p3&dl=0).
+Data can be downloaded via [Dropbox](https://www.dropbox.com/scl/fi/oafk1fno8j0caypijx82g/data_release.zip?rlkey=5qruam81vak4q5w9818lfuv8x&st=5hl5p1p3&dl=0).
 
 - original: full datasets for each domain
 - humans / books / songs: datasets for each domain. We provide an example processed data for 100 training examples, in preprocessed_data folder. 
